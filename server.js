@@ -449,12 +449,14 @@ function playBotTurn(room) {
   const difficulty = bot.difficulty || 'medium';
 
   // ─── ROLL DICE ──────────────────────────────────────────
-  // Opening rule: guaranteed 6 when all pawns in home
+  // Opening rule: reduced pool [1,3,6] when all pawns in home
   const botTokens = gs.tokens[botIndex];
   const botAllHome = botTokens.every(t => t.state === 'home' || t.state === 'finished');
   const botNoActive = !botTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
 
-  const value = (botAllHome && botNoActive) ? 6 : (Math.floor(Math.random() * 6) + 1);
+  const value = (botAllHome && botNoActive)
+    ? [1, 3, 6][Math.floor(Math.random() * 3)]
+    : (Math.floor(Math.random() * 6) + 1);
   gs.diceValue = value;
   gs.rolled = true;
 
@@ -791,15 +793,17 @@ io.on('connection', (socket) => {
     }
 
     // Roll the dice (1-6)
-    // OPENING RULE: When ALL of a player's pawns are in home (none active/homeColumn),
-    // guarantee a 6 so they can always get started. Common Ludo house rule.
+    // OPENING RULE: When ALL pawns are in home (none on board),
+    // roll from reduced pool [1, 3, 6] so probability of 6 = 33% instead of 16%.
+    // Gets pawns out faster without feeling rigged.
     const playerTokens = gs.tokens[playerInfo.playerIndex];
     const allInHome = playerTokens.every(t => t.state === 'home' || t.state === 'finished');
     const noActiveTokens = !playerTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
 
     let value;
     if (allInHome && noActiveTokens) {
-      value = 6; // Guaranteed 6 to get out of home
+      const openingPool = [1, 3, 6];
+      value = openingPool[Math.floor(Math.random() * openingPool.length)];
     } else {
       value = Math.floor(Math.random() * 6) + 1;
     }
