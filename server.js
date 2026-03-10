@@ -143,18 +143,23 @@ function getValidMoves(room, playerIndex, diceValue) {
         break;
 
       case 'active': {
-        // Calculate steps from player's start
+        // Calculate steps from player's start (0 = just entered, 50 = last track cell)
         let stepsFromStart = (token.trackPos - START_POSITIONS[color] + BOARD_SIZE) % BOARD_SIZE;
         let newSteps = stepsFromStart + diceValue;
 
-        if (newSteps > BOARD_SIZE + HOME_STRETCH - 1) {
+        // Each player traverses 51 track cells (steps 0-50), then enters home column.
+        // Home column has 6 positions (0-5). Max total = 50 + 6 = 56.
+        const LAST_TRACK_STEP = 50;
+        const MAX_STEPS = LAST_TRACK_STEP + HOME_STRETCH; // 56
+
+        if (newSteps > MAX_STEPS) {
           // Can't move past the end of home column — no valid move
           break;
         }
 
-        if (newSteps >= BOARD_SIZE) {
-          // Entering home column
-          const homePos = newSteps - BOARD_SIZE;
+        if (newSteps > LAST_TRACK_STEP) {
+          // Entering home column (steps 51-56 → homePos 0-5)
+          const homePos = newSteps - LAST_TRACK_STEP - 1;
           // Check if own token already in that home column position
           const blocked = tokens.some(
             (t, i) => i !== idx && t.state === 'homeColumn' && t.homeColPos === homePos
@@ -167,7 +172,7 @@ function getValidMoves(room, playerIndex, diceValue) {
             }
           }
         } else {
-          // Normal track movement
+          // Normal track movement (steps 0-50)
           const newTrackPos = getTrackPosition(color, newSteps);
           // Check if own token is on destination
           const ownBlocked = tokens.some(
@@ -444,7 +449,12 @@ function playBotTurn(room) {
   const difficulty = bot.difficulty || 'medium';
 
   // ─── ROLL DICE ──────────────────────────────────────────
-  const value = Math.floor(Math.random() * 6) + 1;
+  // Opening rule: guaranteed 6 when all pawns in home
+  const botTokens = gs.tokens[botIndex];
+  const botAllHome = botTokens.every(t => t.state === 'home' || t.state === 'finished');
+  const botNoActive = !botTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
+
+  const value = (botAllHome && botNoActive) ? 6 : (Math.floor(Math.random() * 6) + 1);
   gs.diceValue = value;
   gs.rolled = true;
 
@@ -531,15 +541,17 @@ function playBotTurn(room) {
     });
 
     // Handle bonus turn
-    const gotExtraTurn = value === 6 || captured !== null;
+    const botDidFinish = bestMove.type === 'finish';
+    const gotExtraTurn = value === 6 || captured !== null || botDidFinish;
     if (gotExtraTurn) {
       gs.diceValue = null;
       gs.validMoves = [];
       gs.rolled = false;
 
+      const reason = botDidFinish ? 'Token reached home!' : (value === 6 ? 'Rolled a 6!' : 'Captured!');
       io.to(room.code).emit('extraTurn', {
         playerIndex: botIndex,
-        reason: value === 6 ? 'Rolled a 6!' : 'Captured!',
+        reason,
       });
 
       // Bot plays again after delay
@@ -779,7 +791,18 @@ io.on('connection', (socket) => {
     }
 
     // Roll the dice (1-6)
-    const value = Math.floor(Math.random() * 6) + 1;
+    // OPENING RULE: When ALL of a player's pawns are in home (none active/homeColumn),
+    // guarantee a 6 so they can always get started. Common Ludo house rule.
+    const playerTokens = gs.tokens[playerInfo.playerIndex];
+    const allInHome = playerTokens.every(t => t.state === 'home' || t.state === 'finished');
+    const noActiveTokens = !playerTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
+
+    let value;
+    if (allInHome && noActiveTokens) {
+      value = 6; // Guaranteed 6 to get out of home
+    } else {
+      value = Math.floor(Math.random() * 6) + 1;
+    }
     gs.diceValue = value;
     gs.rolled = true;
 
@@ -891,7 +914,8 @@ io.on('connection', (socket) => {
 
     // Determine next action — SAVE dice value before clearing
     const rolledValue = gs.diceValue;
-    const gotExtraTurn = rolledValue === 6 || captured !== null;
+    const didFinish = move.type === 'finish';
+    const gotExtraTurn = rolledValue === 6 || captured !== null || didFinish;
 
     if (gotExtraTurn) {
       // Extra turn: reset dice state but keep same player
@@ -899,9 +923,10 @@ io.on('connection', (socket) => {
       gs.validMoves = [];
       gs.rolled = false;
 
+      const reason = didFinish ? 'Token reached home!' : (rolledValue === 6 ? 'Rolled a 6!' : 'Captured opponent!');
       io.to(playerInfo.roomCode).emit('extraTurn', {
         playerIndex: playerInfo.playerIndex,
-        reason: rolledValue === 6 ? 'Rolled a 6!' : 'Captured opponent!',
+        reason,
       });
     } else {
       // Normal: advance to next player

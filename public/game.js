@@ -13,25 +13,39 @@ const SFX = {
   ctx: null,
   enabled: true,
 
-  /** Initialize AudioContext on first user interaction (browser requirement) */
+  /** Initialize AudioContext on first user interaction (browser requirement).
+   *  On mobile, AudioContext starts suspended — must call resume() inside a gesture. */
   init() {
-    if (this.ctx) return;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!this.ctx) {
+      try {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (e) {
+        console.warn('[SFX] AudioContext not supported');
+        this.enabled = false;
+        return;
+      }
+    }
+    // CRITICAL for mobile: resume suspended context on user gesture
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
   },
 
   /** Play a tone with given frequency, duration, and type */
   tone(freq, dur = 0.1, type = 'square', vol = 0.15) {
-    if (!this.ctx || !this.enabled) return;
-    const o = this.ctx.createOscillator();
-    const g = this.ctx.createGain();
-    o.type = type;
-    o.frequency.value = freq;
-    g.gain.value = vol;
-    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
-    o.connect(g);
-    g.connect(this.ctx.destination);
-    o.start();
-    o.stop(this.ctx.currentTime + dur);
+    if (!this.ctx || !this.enabled || this.ctx.state !== 'running') return;
+    try {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      g.gain.value = vol;
+      g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+      o.connect(g);
+      g.connect(this.ctx.destination);
+      o.start();
+      o.stop(this.ctx.currentTime + dur);
+    } catch (e) { /* ignore audio errors */ }
   },
 
   /** Dice rolling — rapid clicking sounds */
