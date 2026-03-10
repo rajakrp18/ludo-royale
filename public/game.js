@@ -433,7 +433,7 @@ function renderAllTokens() {
   group.innerHTML = '';
 
   const playerColors = GS.players.map(p => p.color);
-  const isMyTurn = GS.currentTurn === GS.myIndex;
+  const isMyTurn = GS.currentTurn === GS.myIndex || GS.isLocalGame;
   const posMap = {};
 
   for (let pi = 0; pi < GS.tokens.length; pi++) {
@@ -450,7 +450,9 @@ function renderAllTokens() {
       const off = posMap[pk] * 3;
       posMap[pk]++;
 
-      const moveable = isMyTurn && pi === GS.myIndex && GS.validMoveTokens.includes(ti);
+      // In local mode, moveable is based on current turn player, not myIndex
+      const isCurrentPlayer = GS.isLocalGame ? (pi === GS.currentTurn) : (pi === GS.myIndex);
+      const moveable = isMyTurn && isCurrentPlayer && GS.validMoveTokens.includes(ti);
 
       const pawnGroup = el('g', {});
       drawPawn(pawnGroup, cx + off, cy + off, color, moveable, ti);
@@ -652,7 +654,7 @@ const socket = io();
 const GS = {
   myIndex: -1, myColor: null, myName: '', roomCode: '', isHost: false,
   players: [], tokens: null, currentTurn: -1, diceValue: null,
-  validMoveTokens: [], rolling: false,
+  validMoveTokens: [], rolling: false, isLocalGame: false,
 };
 
 // ─── Token click handler (critical fix) ────────────────
@@ -710,7 +712,7 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
       return;
     }
 
-    if (playerIndex === GS.myIndex) {
+    if (playerIndex === GS.myIndex || GS.isLocalGame) {
       GS.validMoveTokens = validMoves || [];
       if (validMoves.length === 0) {
         SFX.noMoves();
@@ -787,7 +789,7 @@ socket.on('extraTurn', ({ playerIndex, reason }) => {
   updateDice(null);
   SFX.extraTurn();
 
-  if (playerIndex === GS.myIndex) {
+  if (playerIndex === GS.myIndex || GS.isLocalGame) {
     setMsg(`Bonus turn! Roll again.`);
     enableDice();
   } else {
@@ -808,10 +810,12 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
   updateDice(null);
   renderAllTokens();
 
-  if (currentTurn === GS.myIndex) {
+  if (currentTurn === GS.myIndex || GS.isLocalGame) {
     // YOUR TURN — prominent notification
     SFX.yourTurn();
-    setMsg(`YOUR TURN! Roll the dice.`);
+    const turnColor = GS.players[currentTurn]?.color || '';
+    const colorName = turnColor.charAt(0).toUpperCase() + turnColor.slice(1);
+    setMsg(GS.isLocalGame ? `${colorName}'s turn! Roll the dice.` : `YOUR TURN! Roll the dice.`);
     enableDice();
     // Flash the controls area
     const ctrl = document.querySelector('.game-controls');
@@ -914,6 +918,8 @@ document.getElementById('btnCreateRoom').addEventListener('click', () => {
 document.getElementById('btnShowJoin').addEventListener('click', () => {
   const s = document.getElementById('joinSection');
   s.classList.toggle('hidden');
+  document.getElementById('botSection').classList.add('hidden');
+  document.getElementById('localSection').classList.add('hidden');
   if (!s.classList.contains('hidden')) document.getElementById('roomCodeInput').focus();
 });
 
@@ -943,14 +949,109 @@ document.getElementById('btnJoinRoom').addEventListener('click', () => {
 document.getElementById('playerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnCreateRoom').click(); });
 document.getElementById('roomCodeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnJoinRoom').click(); });
 
-// ─── PLAY VS COMPUTER ───────────────────────────────────
+// ─── LOCAL MULTIPLAYER ─────────────────────────────────
+document.getElementById('btnShowLocal').addEventListener('click', () => {
+  const section = document.getElementById('localSection');
+  section.classList.toggle('hidden');
+  document.getElementById('joinSection').classList.add('hidden');
+  document.getElementById('botSection').classList.add('hidden');
+});
+
+// Color picker toggle for local play
+document.querySelectorAll('#localColorPicker .color-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    opt.classList.toggle('selected');
+    // Ensure at least 2 colors selected
+    const selected = document.querySelectorAll('#localColorPicker .color-opt.selected');
+    if (selected.length < 2) opt.classList.add('selected'); // Force minimum 2
+  });
+});
+
+// Start local game (pass & play on same device)
+document.getElementById('btnStartLocal').addEventListener('click', () => {
+  SFX.init();
+  const name = document.getElementById('playerName').value.trim() || 'Player';
+  const selectedColors = Array.from(
+    document.querySelectorAll('#localColorPicker .color-opt.selected')
+  ).map(el => el.dataset.color);
+
+  if (selectedColors.length < 2) return showError('Pick at least 2 colors.');
+  GS.myName = name;
+  GS.isHost = true;
+  GS.isLocalGame = true;
+
+  socket.emit('createLocalGame', {
+    playerName: name,
+    colors: selectedColors,
+  }, (r) => {
+    if (r.success) {
+      GS.myIndex = 0; // Controls all players in local mode
+      GS.myColor = r.color;
+      GS.roomCode = r.roomCode;
+      GS.players = r.players;
+      GS.localColors = selectedColors;
+      saveSession();
+    } else {
+      showError(r.error || 'Failed to start local game.');
+    }
+  });
+});
+
+// ─── VIDEO CAPTURE ──────────────────────────────────────
+const videoState = { active: false, stream: null };
+
+document.getElementById('btnVideoToggle').addEventListener('click', async () => {
+  SFX.init();
+  const btn = document.getElementById('btnVideoToggle');
+
+  if (videoState.active) {
+    // Stop camera
+    if (videoState.stream) {
+      videoState.stream.getTracks().forEach(t => t.stop());
+      videoState.stream = null;
+    }
+    document.getElementById('localVideo').srcObject = null;
+    document.getElementById('videoSelf').classList.add('hidden');
+    videoState.active = false;
+    btn.classList.remove('video-on');
+    btn.textContent = '📷';
+    showToast('Camera off');
+    return;
+  }
+
+  try {
+    videoState.stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 160 }, height: { ideal: 120 }, facingMode: 'user' },
+      audio: false,
+    });
+    document.getElementById('localVideo').srcObject = videoState.stream;
+    document.getElementById('videoSelf').classList.remove('hidden');
+    document.getElementById('videoSelfName').textContent = GS.myName || 'You';
+    videoState.active = true;
+    btn.classList.add('video-on');
+    btn.textContent = '📹';
+    showToast('Camera on');
+
+    // Share video stream with existing WebRTC peers
+    if (voiceState.active) {
+      for (const [peerId, pc] of Object.entries(voiceState.peers)) {
+        videoState.stream.getVideoTracks().forEach(track => {
+          pc.addTrack(track, videoState.stream);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[VIDEO] Camera access denied:', err);
+    showToast('Camera access denied. Check permissions.');
+  }
+});
 let selectedDifficulty = 'medium';
 
 document.getElementById('btnShowBot').addEventListener('click', () => {
   const section = document.getElementById('botSection');
   section.classList.toggle('hidden');
-  // Hide join section if open
   document.getElementById('joinSection').classList.add('hidden');
+  document.getElementById('localSection').classList.add('hidden');
 });
 
 // Difficulty selection buttons
@@ -1054,7 +1155,7 @@ function initGameScreen() {
   updateGamePlayers();
   renderAllTokens();
 
-  if (GS.currentTurn === GS.myIndex) {
+  if (GS.currentTurn === GS.myIndex || GS.isLocalGame) {
     setMsg('Your turn! Roll the dice.');
     enableDice();
   } else {
@@ -1133,7 +1234,8 @@ function animateDice(finalValue, callback) {
 
 // Roll dice — shared function used by both button and dice click
 function triggerRoll() {
-  if (GS.rolling || GS.currentTurn !== GS.myIndex || animating) return;
+  if (GS.rolling || animating) return;
+  if (!GS.isLocalGame && GS.currentTurn !== GS.myIndex) return;
   if (document.getElementById('btnRollDice').disabled) return;
   SFX.init(); // Ensure audio context on user gesture
   SFX.diceRoll();

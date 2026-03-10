@@ -37,6 +37,13 @@
         <button class="btn btn-bot" id="btnShowBot" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 4px 20px rgba(139,92,246,0.3);">
           <span class="btn-icon">🤖</span> Play vs Computer
         </button>
+
+        <!-- Local Multiplayer (same device) -->
+        <button class="btn" id="btnShowLocal" style="width:100%;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;box-shadow:0 4px 20px rgba(8,145,178,0.3);">
+          <span class="btn-icon">👥</span> Local Play (Same Device)
+        </button>
+
+        <!-- Bot options -->
         <div id="botSection" class="join-section hidden">
           <div style="display:flex;gap:8px;width:100%;">
             <button class="btn btn-bot-diff active" data-diff="easy" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#94a3b8;font-size:0.85rem;cursor:pointer;">😊 Easy</button>
@@ -44,6 +51,19 @@
             <button class="btn btn-bot-diff" data-diff="hard" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#94a3b8;font-size:0.85rem;cursor:pointer;">🔥 Hard</button>
           </div>
           <button class="btn btn-accent" id="btnStartBot" style="width:100%;"><span class="btn-icon">▶</span> Start Game vs Bot</button>
+        </div>
+
+        <!-- Local multiplayer options -->
+        <div id="localSection" class="join-section hidden">
+          <p style="color:var(--text-secondary);font-size:0.82rem;text-align:center;">Pass the device to take turns! Pick colors:</p>
+          <div class="color-picker" id="localColorPicker">
+            <div class="color-opt selected" data-color="red" style="background:#D32F2F;"></div>
+            <div class="color-opt selected" data-color="yellow" style="background:#F9A825;"></div>
+            <div class="color-opt" data-color="green" style="background:#2E7D32;"></div>
+            <div class="color-opt" data-color="blue" style="background:#1565C0;"></div>
+          </div>
+          <p style="color:var(--text-muted);font-size:0.72rem;text-align:center;">Tap colors to toggle (2-4 players)</p>
+          <button class="btn btn-accent" id="btnStartLocal" style="width:100%;"><span class="btn-icon">▶</span> Start Local Game</button>
         </div>
         <div id="joinSection" class="join-section hidden">
           <div class="form-group">
@@ -54,6 +74,7 @@
           <button class="btn btn-accent" id="btnJoinRoom"><span class="btn-icon">🎮</span> Join Game</button>
         </div>
         <p class="error-msg hidden" id="welcomeError"></p>
+        <p class="credit">Created by <strong>Raj Poddar</strong></p>
       </div>
     </div>
   </div>
@@ -94,6 +115,27 @@
       <div class="game-topbar">
         <div class="game-players" id="gamePlayers"></div>
       </div>
+
+      <!-- Video feeds container (overlays board corners) -->
+      <div class="video-container" id="videoContainer">
+        <div class="video-feed" id="videoSelf">
+          <video id="localVideo" autoplay muted playsinline></video>
+          <span class="video-name" id="videoSelfName">You</span>
+        </div>
+        <div class="video-feed hidden" id="videoRemote1">
+          <video id="remoteVideo1" autoplay playsinline></video>
+          <span class="video-name" id="videoRemoteName1"></span>
+        </div>
+        <div class="video-feed hidden" id="videoRemote2">
+          <video id="remoteVideo2" autoplay playsinline></video>
+          <span class="video-name" id="videoRemoteName2"></span>
+        </div>
+        <div class="video-feed hidden" id="videoRemote3">
+          <video id="remoteVideo3" autoplay playsinline></video>
+          <span class="video-name" id="videoRemoteName3"></span>
+        </div>
+      </div>
+
       <div class="board-wrapper">
         <div class="board-frame">
           <svg id="ludoBoard" viewBox="0 0 615 615" class="ludo-board"></svg>
@@ -112,6 +154,7 @@
         <div class="game-message" id="gameMessage">Your turn! Roll the dice.</div>
         <button class="btn-chat-toggle" id="btnChatToggle">💬</button>
         <button class="btn-voice-toggle" id="btnVoiceToggle" title="Join Voice Chat">🎤</button>
+        <button class="btn-video-toggle" id="btnVideoToggle" title="Toggle Camera">📷</button>
       </div>
       <div class="chat-panel hidden" id="chatPanel">
         <div class="chat-header"><span>Chat</span><button class="btn-close-chat" id="btnCloseChat">×</button></div>

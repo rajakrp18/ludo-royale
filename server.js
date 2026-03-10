@@ -685,6 +685,68 @@ io.on('connection', (socket) => {
   });
 
   /**
+   * CREATE LOCAL GAME — Multiple players on same device (pass & play).
+   * One socket controls all human players. Colors chosen by the user.
+   */
+  socket.on('createLocalGame', ({ playerName, colors }, callback) => {
+    const roomCode = generateRoomCode();
+    const colorNames = { red: 'Red', yellow: 'Yellow', green: 'Green', blue: 'Blue' };
+
+    const room = {
+      code: roomCode,
+      host: socket.id,
+      players: colors.map((color, i) => ({
+        id: socket.id, // All controlled by same socket
+        name: i === 0 ? playerName : colorNames[color],
+        color: color,
+        connected: true,
+        isBot: false,
+      })),
+      gameState: null,
+      status: 'waiting',
+      maxPlayers: colors.length,
+      createdAt: Date.now(),
+      isLocalGame: true, // Flag: single socket controls all players
+    };
+
+    rooms[roomCode] = room;
+    players[socket.id] = { roomCode, playerIndex: 0, name: playerName };
+    socket.join(roomCode);
+
+    console.log(`[LOCAL GAME] ${roomCode} by ${playerName} with colors ${colors.join(',')}`);
+
+    // Auto-start
+    room.status = 'playing';
+    room.gameState = {
+      tokens: room.players.map(() => createTokens()),
+      currentTurn: 0,
+      diceValue: null,
+      validMoves: [],
+      rolled: false,
+      consecutiveSixes: 0,
+      winner: null,
+    };
+
+    const playerList = room.players.map(p => ({ name: p.name, color: p.color, isBot: false }));
+
+    callback({
+      success: true,
+      roomCode,
+      playerIndex: 0,
+      color: colors[0],
+      players: playerList,
+    });
+
+    setTimeout(() => {
+      io.to(roomCode).emit('gameStarted', {
+        gameState: room.gameState,
+        players: playerList,
+        currentTurn: 0,
+      });
+    }, 200);
+  });
+
+  /**
    * JOIN ROOM
    * Client sends: { roomCode, playerName }
    * Server responds: { playerIndex, color, players }
@@ -781,7 +843,9 @@ io.on('connection', (socket) => {
     if (!room || room.status !== 'playing') return callback?.({ success: false });
 
     const gs = room.gameState;
-    if (gs.currentTurn !== playerInfo.playerIndex) {
+    // Local game: single socket controls all players
+    const activePlayer = room.isLocalGame ? gs.currentTurn : playerInfo.playerIndex;
+    if (!room.isLocalGame && gs.currentTurn !== playerInfo.playerIndex) {
       return callback?.({ success: false, error: 'Not your turn.' });
     }
     if (gs.rolled) {
@@ -789,10 +853,7 @@ io.on('connection', (socket) => {
     }
 
     // Roll the dice (1-6)
-    // OPENING RULE: When ALL pawns are in home (none on board),
-    // roll from reduced pool [1, 3, 6] so probability of 6 = 33% instead of 16%.
-    // Gets pawns out faster without feeling rigged.
-    const playerTokens = gs.tokens[playerInfo.playerIndex];
+    const playerTokens = gs.tokens[activePlayer];
     const allInHome = playerTokens.every(t => t.state === 'home' || t.state === 'finished');
     const noActiveTokens = !playerTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
 
@@ -814,7 +875,7 @@ io.on('connection', (socket) => {
         gs.validMoves = [];
         io.to(playerInfo.roomCode).emit('diceRolled', {
           value,
-          playerIndex: playerInfo.playerIndex,
+          playerIndex: activePlayer,
           validMoves: [],
           threeSixes: true,
         });
@@ -833,12 +894,12 @@ io.on('connection', (socket) => {
     }
 
     // Compute valid moves
-    const validMoves = getValidMoves(room, playerInfo.playerIndex, value);
+    const validMoves = getValidMoves(room, activePlayer, value);
     gs.validMoves = validMoves;
 
     io.to(playerInfo.roomCode).emit('diceRolled', {
       value,
-      playerIndex: playerInfo.playerIndex,
+      playerIndex: activePlayer,
       validMoves: validMoves.map(m => m.tokenId),
     });
 
@@ -868,7 +929,8 @@ io.on('connection', (socket) => {
     if (!room || room.status !== 'playing') return callback?.({ success: false });
 
     const gs = room.gameState;
-    if (gs.currentTurn !== playerInfo.playerIndex) {
+    const activePlayer = room.isLocalGame ? gs.currentTurn : playerInfo.playerIndex;
+    if (!room.isLocalGame && gs.currentTurn !== playerInfo.playerIndex) {
       return callback?.({ success: false, error: 'Not your turn.' });
     }
 
@@ -879,25 +941,21 @@ io.on('connection', (socket) => {
     }
 
     // Execute the move
-    const captured = executeMove(room, playerInfo.playerIndex, tokenId, move);
+    const captured = executeMove(room, activePlayer, tokenId, move);
 
     // Check for win
-    if (checkWin(room, playerInfo.playerIndex)) {
-      gs.winner = playerInfo.playerIndex;
+    if (checkWin(room, activePlayer)) {
+      gs.winner = activePlayer;
       room.status = 'finished';
 
       io.to(playerInfo.roomCode).emit('tokenMoved', {
-        playerIndex: playerInfo.playerIndex,
-        tokenId,
-        move,
-        captured,
-        gameState: gs,
+        playerIndex: activePlayer, tokenId, move, captured, gameState: gs,
       });
 
       io.to(playerInfo.roomCode).emit('gameOver', {
-        winner: playerInfo.playerIndex,
-        winnerName: room.players[playerInfo.playerIndex].name,
-        winnerColor: room.players[playerInfo.playerIndex].color,
+        winner: activePlayer,
+        winnerName: room.players[activePlayer].name,
+        winnerColor: room.players[activePlayer].color,
       });
 
       return callback?.({ success: true });
@@ -905,35 +963,27 @@ io.on('connection', (socket) => {
 
     // Broadcast the move
     io.to(playerInfo.roomCode).emit('tokenMoved', {
-      playerIndex: playerInfo.playerIndex,
-      tokenId,
-      move,
-      captured,
-      gameState: gs,
+      playerIndex: activePlayer, tokenId, move, captured, gameState: gs,
     });
 
-    // Determine next action — SAVE dice value before clearing
+    // Determine next action
     const rolledValue = gs.diceValue;
     const didFinish = move.type === 'finish';
     const gotExtraTurn = rolledValue === 6 || captured !== null || didFinish;
 
     if (gotExtraTurn) {
-      // Extra turn: reset dice state but keep same player
       gs.diceValue = null;
       gs.validMoves = [];
       gs.rolled = false;
 
       const reason = didFinish ? 'Token reached home!' : (rolledValue === 6 ? 'Rolled a 6!' : 'Captured opponent!');
       io.to(playerInfo.roomCode).emit('extraTurn', {
-        playerIndex: playerInfo.playerIndex,
-        reason,
+        playerIndex: activePlayer, reason,
       });
     } else {
-      // Normal: advance to next player
       nextTurn(room);
       io.to(playerInfo.roomCode).emit('turnChanged', {
-        currentTurn: gs.currentTurn,
-        gameState: gs,
+        currentTurn: gs.currentTurn, gameState: gs,
       });
     }
 
