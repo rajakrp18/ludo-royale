@@ -385,8 +385,19 @@ function drawPawn(group, cx, cy, color, moveable, tokenId) {
 function getTokenPos(color, tokenId, tokenData) {
   switch (tokenData.state) {
     case 'home': {
-      const [r, c] = HOME_BASE[color][tokenId];
-      const [x, y] = gp(r, c);
+      // Diamond pattern inside home base for better spacing
+      const baseCenter = {
+        red: [2.5, 2.5], green: [2.5, 11.5], yellow: [11.5, 11.5], blue: [11.5, 2.5],
+      };
+      const offsets = [
+        [0, -0.65],   // top
+        [0.65, 0],    // right
+        [0, 0.65],    // bottom
+        [-0.65, 0],   // left
+      ];
+      const [cr, cc] = baseCenter[color];
+      const [or, oc] = offsets[tokenId];
+      const [x, y] = gp(cr + or, cc + oc);
       return [x + CELL/2, y + CELL/2];
     }
     case 'active': {
@@ -405,9 +416,10 @@ function getTokenPos(color, tokenId, tokenData) {
       return [cx + CELL/2, cy + CELL/2];
     }
     case 'finished': {
-      const offsets = { red: [-14,-14], green: [14,-14], yellow: [14,14], blue: [-14,14] };
+      // Spread finished pawns in center area
+      const cOffsets = [[-10,-10],[10,-10],[-10,10],[10,10]];
       const [cx, cy] = gp(7, 7);
-      const [ox, oy] = offsets[color];
+      const [ox, oy] = cOffsets[tokenId] || [0,0];
       return [cx + CELL/2 + ox, cy + CELL/2 + oy];
     }
     default: return [0, 0];
@@ -468,6 +480,172 @@ function renderAllTokens() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 3b. STEP-BY-STEP PAWN ANIMATION
+// ═══════════════════════════════════════════════════════════════
+
+let animating = false; // Lock to prevent input during animation
+
+/**
+ * Compute the path of grid cells a pawn travels through.
+ * Returns array of [cx, cy] pixel positions for each step.
+ */
+function computeMovePath(color, playerIndex, tokenId, oldTokens, newTokens, move) {
+  const oldTk = oldTokens[playerIndex][tokenId];
+  const newTk = newTokens[playerIndex][tokenId];
+  const path = [];
+
+  if (move.type === 'enter') {
+    // Home → Start cell (single step)
+    const [r, c] = TRACK[move.to];
+    const [x, y] = gp(r, c);
+    path.push([x + CELL/2, y + CELL/2]);
+    return path;
+  }
+
+  if (move.type === 'move' && oldTk.state === 'active') {
+    // Track movement: step through each cell from old to new
+    const oldPos = oldTk.trackPos;
+    const newPos = move.to;
+    let pos = oldPos;
+    // Walk forward on track (handling wrap-around)
+    for (let step = 0; step < 52; step++) {
+      pos = (pos + 1) % 52;
+      const [r, c] = TRACK[pos];
+      const [x, y] = gp(r, c);
+      path.push([x + CELL/2, y + CELL/2]);
+      if (pos === newPos) break;
+    }
+    return path;
+  }
+
+  if (move.type === 'homeColumn' || move.type === 'finish') {
+    if (oldTk.state === 'active') {
+      // Track → Home Column: walk remaining track cells, then into home column
+      const startIdx = START_INDEX[color];
+      const oldPos = oldTk.trackPos;
+      // Walk to the last track cell before home entry
+      // The last track cell is the one just before start (going backwards)
+      const lastTrackPos = (startIdx + 51) % 52; // cell before wrapping to start
+      // But wait, we need to find the actual entry point
+      // Walk forward from current pos
+      let pos = oldPos;
+      // First: walk track cells
+      for (let step = 0; step < 52; step++) {
+        pos = (pos + 1) % 52;
+        const [r, c] = TRACK[pos];
+        const [x, y] = gp(r, c);
+        path.push([x + CELL/2, y + CELL/2]);
+        // Check if next step would be home column
+        const stepsNow = (pos - startIdx + 52) % 52;
+        if (stepsNow >= 50) break; // reached entry
+      }
+      // Then: walk home column cells
+      const targetHP = move.homeColPos !== undefined ? move.homeColPos : (HOME_COLUMNS[color].length - 1);
+      for (let hp = 0; hp <= targetHP; hp++) {
+        if (hp < HOME_COLUMNS[color].length) {
+          const [r, c] = HOME_COLUMNS[color][hp];
+          const [x, y] = gp(r, c);
+          path.push([x + CELL/2, y + CELL/2]);
+        }
+      }
+    } else if (oldTk.state === 'homeColumn') {
+      // Already in home column, move further in
+      const targetHP = move.homeColPos !== undefined ? move.homeColPos : (HOME_COLUMNS[color].length - 1);
+      for (let hp = oldTk.homeColPos + 1; hp <= targetHP; hp++) {
+        if (hp < HOME_COLUMNS[color].length) {
+          const [r, c] = HOME_COLUMNS[color][hp];
+          const [x, y] = gp(r, c);
+          path.push([x + CELL/2, y + CELL/2]);
+        }
+      }
+    }
+    // If finish, add center position
+    if (move.type === 'finish') {
+      const cOffsets = [[-10,-10],[10,-10],[-10,10],[10,10]];
+      const [cx, cy] = gp(7, 7);
+      const [ox, oy] = cOffsets[tokenId] || [0,0];
+      path.push([cx + CELL/2 + ox, cy + CELL/2 + oy]);
+    }
+    return path;
+  }
+
+  if (move.type === 'homeColumnMove') {
+    const targetHP = move.homeColPos;
+    for (let hp = oldTk.homeColPos + 1; hp <= targetHP; hp++) {
+      if (hp < HOME_COLUMNS[color].length) {
+        const [r, c] = HOME_COLUMNS[color][hp];
+        const [x, y] = gp(r, c);
+        path.push([x + CELL/2, y + CELL/2]);
+      }
+    }
+    return path;
+  }
+
+  // Fallback: just the final position
+  const finalPos = getTokenPos(color, tokenId, newTk);
+  path.push(finalPos);
+  return path;
+}
+
+/**
+ * Animate a pawn stepping through a path of positions.
+ * Creates a temporary animated pawn, hides the real one.
+ */
+function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
+  if (path.length === 0) { callback?.(); return; }
+
+  animating = true;
+  const group = document.getElementById('tokenGroup');
+  const col = COLORS[color];
+
+  // Create animated pawn group
+  const animGroup = el('g', { id: 'animPawn' });
+
+  function drawAnimPawn(cx, cy) {
+    animGroup.innerHTML = '';
+    // Shadow
+    animGroup.appendChild(el('ellipse', { cx: cx+1, cy: cy+10, rx: 11, ry: 5, fill: 'rgba(0,0,0,0.2)' }));
+    // Base
+    animGroup.appendChild(el('ellipse', { cx, cy: cy+6, rx: 11, ry: 5, fill: col.dk }));
+    animGroup.appendChild(el('ellipse', { cx, cy: cy+5, rx: 11, ry: 5, fill: col.bg }));
+    // Body
+    animGroup.appendChild(el('path', {
+      d: `M${cx-9},${cy+4} Q${cx-7},${cy-5} ${cx-5},${cy-8} L${cx+5},${cy-8} Q${cx+7},${cy-5} ${cx+9},${cy+4} Z`,
+      fill: col.bg, stroke: col.dk, 'stroke-width': 0.8,
+    }));
+    // Neck
+    animGroup.appendChild(el('ellipse', { cx, cy: cy-7, rx: 6, ry: 2.5, fill: col.dk, opacity: 0.5 }));
+    // Head
+    animGroup.appendChild(el('circle', { cx, cy: cy-12, r: 7, fill: col.bg, stroke: col.dk, 'stroke-width': 1 }));
+    // Shine
+    animGroup.appendChild(el('circle', { cx: cx-2, cy: cy-14, r: 2.8, fill: 'rgba(255,255,255,0.55)' }));
+  }
+
+  group.appendChild(animGroup);
+
+  let step = 0;
+  const STEP_DELAY = 120; // ms per cell
+
+  function nextStep() {
+    if (step >= path.length) {
+      // Animation done
+      animGroup.remove();
+      animating = false;
+      callback?.();
+      return;
+    }
+
+    const [cx, cy] = path[step];
+    drawAnimPawn(cx, cy);
+    SFX.tone(300 + step * 20, 0.04, 'sine', 0.06); // Subtle step sound
+    step++;
+    setTimeout(nextStep, STEP_DELAY);
+  }
+
+  nextStep();
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 4. GAME STATE & SOCKET.IO
 // ═══════════════════════════════════════════════════════════════
 
@@ -481,7 +659,7 @@ const GS = {
 
 // ─── Token click handler (critical fix) ────────────────
 function handleTokenClick(tokenId) {
-  if (!GS.validMoveTokens.includes(tokenId)) return;
+  if (!GS.validMoveTokens.includes(tokenId) || animating) return;
   SFX.init();
   console.log('[MOVE] Token', tokenId);
 
@@ -541,10 +719,12 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
         setMsg(`No moves available. Turn passes.`);
       } else if (validMoves.length === 1) {
         // Auto-move single option after brief delay so user sees the dice
+        setMsg(value === 6 ? `Rolled 6! Moving...` : `Rolled ${value}! Moving...`);
         setTimeout(() => handleTokenClick(validMoves[0]), 400);
       } else {
+        // Multiple options — let player choose
         if (value === 6) {
-          setMsg(`Rolled 6! Tap a glowing pawn. Move it off start to bring out others.`);
+          setMsg(`Rolled 6! Tap a pawn to move or bring one out.`);
         } else {
           setMsg(`Rolled ${value}! Tap a glowing pawn.`);
         }
@@ -558,10 +738,22 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
 });
 
 socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }) => {
-  GS.tokens = gs.tokens;
-  GS.validMoveTokens = [];
+  // Save old state BEFORE updating for animation path computation
+  const oldTokens = GS.tokens ? JSON.parse(JSON.stringify(GS.tokens)) : null;
+  const playerColor = GS.players[playerIndex]?.color;
 
-  // Play appropriate sound
+  // Compute path for step-by-step animation
+  let path = [];
+  if (oldTokens && playerColor && move) {
+    try {
+      path = computeMovePath(playerColor, playerIndex, tokenId, oldTokens, gs.tokens, move);
+    } catch (e) {
+      console.warn('[ANIM] Path computation failed:', e);
+      path = [];
+    }
+  }
+
+  // Play sound based on move type
   if (captured) {
     SFX.capture();
     const capName = GS.players[captured.playerIndex]?.name || 'Player';
@@ -570,10 +762,24 @@ socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }
     SFX.finish();
   } else if (move && move.type === 'enter') {
     SFX.pawnEnter();
-  } else {
-    SFX.pawnMove();
   }
-  renderAllTokens();
+
+  // Animate if we have a path, otherwise instant update
+  if (path.length > 1) {
+    // Hide the moving token during animation by rendering without it
+    animatePawnSteps(playerColor, playerIndex, tokenId, path, () => {
+      GS.tokens = gs.tokens;
+      GS.validMoveTokens = [];
+      renderAllTokens();
+    });
+  } else {
+    if (!captured && move && move.type !== 'finish' && move.type !== 'enter') {
+      SFX.pawnMove();
+    }
+    GS.tokens = gs.tokens;
+    GS.validMoveTokens = [];
+    renderAllTokens();
+  }
 });
 
 socket.on('extraTurn', ({ playerIndex, reason }) => {
@@ -925,7 +1131,7 @@ function animateDice(finalValue, callback) {
 
 // Roll dice — shared function used by both button and dice click
 function triggerRoll() {
-  if (GS.rolling || GS.currentTurn !== GS.myIndex) return;
+  if (GS.rolling || GS.currentTurn !== GS.myIndex || animating) return;
   if (document.getElementById('btnRollDice').disabled) return;
   SFX.init(); // Ensure audio context on user gesture
   SFX.diceRoll();

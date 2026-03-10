@@ -130,15 +130,10 @@ function getValidMoves(room, playerIndex, diceValue) {
     switch (token.state) {
       case 'home':
         // Can only leave home on a 6
+        // In standard Ludo, multiple own pawns CAN stack on the start cell
         if (diceValue === 6) {
           const startPos = START_POSITIONS[color];
-          // Check if own token is already on start position
-          const ownTokenOnStart = tokens.some(
-            (t, i) => i !== idx && t.state === 'active' && t.trackPos === startPos
-          );
-          if (!ownTokenOnStart) {
-            moves.push({ tokenId: idx, type: 'enter', to: startPos });
-          }
+          moves.push({ tokenId: idx, type: 'enter', to: startPos });
         }
         break;
 
