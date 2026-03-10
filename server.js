@@ -50,7 +50,8 @@ app.get('/health', (req, res) => {
 
 // ─── GAME CONSTANTS ──────────────────────────────────────────
 
-const PLAYER_COLORS = ['red', 'green', 'yellow', 'blue'];
+// Color order: diagonal first so 2 players sit across from each other
+const PLAYER_COLORS = ['red', 'yellow', 'green', 'blue'];
 const TOKENS_PER_PLAYER = 4;
 const BOARD_SIZE = 52; // Total cells on the outer track
 const HOME_STRETCH = 6; // 6 cells in each home column
@@ -990,6 +991,61 @@ io.on('connection', (socket) => {
     callback?.({ success: true });
   });
 
+  /**
+   * REJOIN ROOM — Reconnect after accidental disconnect/page refresh.
+   * Client sends { roomCode, playerName } and gets back into the same slot.
+   */
+  socket.on('rejoinRoom', ({ roomCode, playerName }, callback) => {
+    const code = roomCode.toUpperCase().trim();
+    const room = rooms[code];
+
+    if (!room) {
+      return callback({ success: false, error: 'Room no longer exists.' });
+    }
+
+    // Find the disconnected player slot matching this name
+    const slotIndex = room.players.findIndex(
+      p => p.name === playerName && !p.connected && !p.isBot
+    );
+
+    if (slotIndex === -1) {
+      return callback({ success: false, error: 'No matching slot found. Game may have ended.' });
+    }
+
+    // Reconnect the player
+    const slot = room.players[slotIndex];
+    slot.id = socket.id;
+    slot.connected = true;
+
+    // Cancel room destruction timer
+    if (room._destroyTimer) {
+      clearTimeout(room._destroyTimer);
+      room._destroyTimer = null;
+    }
+
+    players[socket.id] = { roomCode: code, playerIndex: slotIndex, name: playerName };
+    socket.join(code);
+
+    console.log(`[REJOIN] ${playerName} rejoined ${code} as ${slot.color}`);
+
+    // Notify everyone
+    io.to(code).emit('playerJoined', {
+      players: room.players.map(p => ({ name: p.name, color: p.color, connected: p.connected })),
+      newPlayer: playerName + ' (reconnected)',
+    });
+
+    // Send full game state to the rejoining player
+    callback({
+      success: true,
+      playerIndex: slotIndex,
+      color: slot.color,
+      roomCode: code,
+      players: room.players.map(p => ({ name: p.name, color: p.color, isBot: p.isBot || false })),
+      gameState: room.gameState,
+      status: room.status,
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════
   // WEBRTC SIGNALING — Voice Chat
   // The server relays WebRTC offers/answers/ICE candidates
@@ -1090,11 +1146,20 @@ io.on('connection', (socket) => {
           });
         }
 
-        // Check if all players disconnected
-        const allDisconnected = room.players.every(p => !p.connected);
-        if (allDisconnected) {
-          console.log(`[ROOM DESTROYED] ${playerInfo.roomCode} (all players left)`);
-          delete rooms[playerInfo.roomCode];
+        // Check if all HUMAN players disconnected
+        const allHumansDisconnected = room.players
+          .filter(p => !p.isBot)
+          .every(p => !p.connected);
+        if (allHumansDisconnected) {
+          // Keep room alive for 5 minutes for reconnection
+          console.log(`[ROOM IDLE] ${playerInfo.roomCode} — all humans left, keeping for 5 min`);
+          if (room._destroyTimer) clearTimeout(room._destroyTimer);
+          room._destroyTimer = setTimeout(() => {
+            if (rooms[playerInfo.roomCode]) {
+              console.log(`[ROOM DESTROYED] ${playerInfo.roomCode} (timeout)`);
+              delete rooms[playerInfo.roomCode];
+            }
+          }, 5 * 60 * 1000); // 5 minutes
         }
       }
     }

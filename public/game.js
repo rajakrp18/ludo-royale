@@ -108,6 +108,14 @@ const SFX = {
     this.tone(350, 0.08, 'sine', 0.08);
   },
 
+  /** YOUR TURN — attention-grabbing notification */
+  yourTurn() {
+    this.init();
+    this.tone(440, 0.12, 'square', 0.15);
+    setTimeout(() => this.tone(554, 0.12, 'square', 0.15), 130);
+    setTimeout(() => this.tone(659, 0.15, 'square', 0.18), 260);
+  },
+
   /** Extra turn notification */
   extraTurn() {
     this.init();
@@ -149,7 +157,7 @@ const COLORS = {
   blue:   { bg: '#1565C0', lt: '#42A5F5', dk: '#0D47A1', pa: '#BBDEFB' },
 };
 
-const PLAYER_COLORS = ['red', 'green', 'yellow', 'blue'];
+const PLAYER_COLORS = ['red', 'yellow', 'green', 'blue'];
 const CELL = 40;
 const GAP = 1;
 const BOARD_PX = 15 * (CELL + GAP) + GAP;
@@ -385,19 +393,9 @@ function drawPawn(group, cx, cy, color, moveable, tokenId) {
 function getTokenPos(color, tokenId, tokenData) {
   switch (tokenData.state) {
     case 'home': {
-      // Diamond pattern inside home base for better spacing
-      const baseCenter = {
-        red: [2.5, 2.5], green: [2.5, 11.5], yellow: [11.5, 11.5], blue: [11.5, 2.5],
-      };
-      const offsets = [
-        [0, -0.65],   // top
-        [0.65, 0],    // right
-        [0, 0.65],    // bottom
-        [-0.65, 0],   // left
-      ];
-      const [cr, cc] = baseCenter[color];
-      const [or, oc] = offsets[tokenId];
-      const [x, y] = gp(cr + or, cc + oc);
+      // Place pawns exactly inside the 4 circles in the home base
+      const [r, c] = HOME_BASE[color][tokenId];
+      const [x, y] = gp(r, c);
       return [x + CELL/2, y + CELL/2];
     }
     case 'active': {
@@ -624,7 +622,7 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
   group.appendChild(animGroup);
 
   let step = 0;
-  const STEP_DELAY = 120; // ms per cell
+  const STEP_DELAY = 200; // ms per cell — visible step-by-step movement
 
   function nextStep() {
     if (step >= path.length) {
@@ -805,16 +803,25 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
   GS.diceValue = null;
   GS.validMoveTokens = [];
   GS.rolling = false;
-  SFX.turnChange();
 
   updateGamePlayers();
   updateDice(null);
   renderAllTokens();
 
   if (currentTurn === GS.myIndex) {
-    setMsg(`Your turn! Roll the dice.`);
+    // YOUR TURN — prominent notification
+    SFX.yourTurn();
+    setMsg(`YOUR TURN! Roll the dice.`);
     enableDice();
+    // Flash the controls area
+    const ctrl = document.querySelector('.game-controls');
+    if (ctrl) {
+      ctrl.style.transition = 'background 0.3s';
+      ctrl.style.background = 'rgba(251,191,36,0.15)';
+      setTimeout(() => { ctrl.style.background = ''; }, 1500);
+    }
   } else {
+    SFX.turnChange();
     const p = GS.players[currentTurn];
     const name = p?.name || 'Player';
     setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
@@ -898,6 +905,7 @@ document.getElementById('btnCreateRoom').addEventListener('click', () => {
       updateLobbyPlayers(r.players);
       showScreen('lobby');
       document.getElementById('btnStartGame').classList.remove('hidden');
+      saveSession();
     } else showError(r.error || 'Failed to create room.');
   });
 });
@@ -926,6 +934,7 @@ document.getElementById('btnJoinRoom').addEventListener('click', () => {
       updateLobbyPlayers(r.players);
       showScreen('lobby');
       document.getElementById('lobbyStatus').textContent = 'Waiting for host to start...';
+      saveSession();
     } else showError(r.error || 'Failed to join.');
   });
 });
@@ -980,6 +989,7 @@ document.getElementById('btnStartBot').addEventListener('click', () => {
       GS.roomCode = r.roomCode;
       GS.players = r.players;
       // Game will auto-start via gameStarted event from server
+      saveSession();
     } else {
       showError(r.error || 'Failed to start bot game.');
     }
@@ -1054,15 +1064,7 @@ function initGameScreen() {
     disableDice();
   }
 
-  // AUTO-START VOICE CHAT when game begins (skip for bot games)
-  const hasBots = GS.players.some(p => p.isBot);
-  if (!voiceState.active && !hasBots) {
-    setTimeout(() => {
-      startVoice().catch(() => {
-        console.log('[VOICE] Auto-start failed — user can tap 🎤 manually');
-      });
-    }, 1500);
-  }
+  // Voice chat is manual — tap 🎤 button to start. No auto mic prompts.
 }
 
 function updateGamePlayers() {
@@ -1230,7 +1232,7 @@ function startConfetti() {
 document.getElementById('btnRematch').addEventListener('click', () => {
   socket.emit('rematch', null, (r) => { if (!r?.success) showToast('Failed to rematch.'); });
 });
-document.getElementById('btnNewGame').addEventListener('click', () => window.location.reload());
+document.getElementById('btnNewGame').addEventListener('click', () => { clearSession(); window.location.reload(); });
 
 // ═══════════════════════════════════════════════════════════════
 // 11. VOICE CHAT (WebRTC Peer-to-Peer Audio)
@@ -1554,49 +1556,128 @@ socket.on('iceCandidate', async ({ fromId, candidate }) => {
 // 12. INIT & AUTO-JOIN FROM URL
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// 13. SESSION SAVE & AUTO-REJOIN
+// ═══════════════════════════════════════════════════════════════
+
+function saveSession() {
+  try {
+    sessionStorage.setItem('ludoSession', JSON.stringify({
+      roomCode: GS.roomCode,
+      playerName: GS.myName,
+      playerIndex: GS.myIndex,
+      timestamp: Date.now(),
+    }));
+  } catch (e) { /* ignore storage errors */ }
+}
+
+function clearSession() {
+  try { sessionStorage.removeItem('ludoSession'); } catch (e) {}
+}
+
+function loadSession() {
+  try {
+    const data = sessionStorage.getItem('ludoSession');
+    if (!data) return null;
+    const session = JSON.parse(data);
+    // Only valid for 5 minutes
+    if (Date.now() - session.timestamp > 5 * 60 * 1000) {
+      clearSession();
+      return null;
+    }
+    return session;
+  } catch (e) { return null; }
+}
+
 /**
- * AUTO-JOIN FLOW:
- * If URL contains ?room=ABC123, we skip the "Create/Join" buttons
- * and show a simplified "Enter name → Join instantly" UI.
- * The friend just taps the link → enters name → they're in.
+ * Try to rejoin a previous game session.
+ * Called on page load if we have saved session data.
  */
+function tryRejoin(session) {
+  console.log('[REJOIN] Attempting to rejoin room', session.roomCode);
+
+  socket.emit('rejoinRoom', {
+    roomCode: session.roomCode,
+    playerName: session.playerName,
+  }, (r) => {
+    if (r.success) {
+      GS.myIndex = r.playerIndex;
+      GS.myColor = r.color;
+      GS.roomCode = r.roomCode;
+      GS.myName = session.playerName;
+      GS.players = r.players;
+
+      if (r.status === 'playing' && r.gameState) {
+        // Rejoin mid-game
+        GS.tokens = r.gameState.tokens;
+        GS.currentTurn = r.gameState.currentTurn;
+        GS.diceValue = null;
+        GS.validMoveTokens = [];
+        showScreen('game');
+        initGameScreen();
+        showToast('Reconnected to game!');
+      } else {
+        // Rejoin lobby
+        document.getElementById('lobbyRoomCode').textContent = r.roomCode;
+        updateLobbyPlayers(r.players);
+        showScreen('lobby');
+        showToast('Reconnected to room!');
+      }
+      saveSession();
+    } else {
+      console.log('[REJOIN] Failed:', r.error);
+      clearSession();
+      // Stay on welcome screen
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 14. URL AUTO-JOIN & INIT
+// ═══════════════════════════════════════════════════════════════
+
 function checkAutoJoin() {
   const params = new URLSearchParams(window.location.search);
   const roomCode = params.get('room');
 
   if (roomCode && roomCode.length >= 4) {
     console.log(`[AUTO-JOIN] Room code from URL: ${roomCode}`);
-
-    // Hide the Create/Join buttons, show a direct join UI
     document.getElementById('btnCreateRoom').style.display = 'none';
     document.getElementById('btnShowJoin').style.display = 'none';
+    document.getElementById('btnShowBot').style.display = 'none';
 
-    // Show join section automatically with code pre-filled
     const joinSection = document.getElementById('joinSection');
     joinSection.classList.remove('hidden');
     document.getElementById('roomCodeInput').value = roomCode.toUpperCase();
     document.getElementById('roomCodeInput').readOnly = true;
     document.getElementById('roomCodeInput').style.opacity = '0.7';
-
-    // Change the join button text
     document.getElementById('btnJoinRoom').innerHTML = '<span class="btn-icon">🎮</span> Join Game';
-
-    // Update subtitle
     document.querySelector('.logo-subtitle').textContent = "You've been invited to play!";
 
-    // Auto-join when they enter name and press Enter or click join
     const nameInput = document.getElementById('playerName');
     nameInput.placeholder = 'Your name to join...';
     nameInput.focus();
 
-    // Clean URL without reloading page (remove ?room= from address bar)
     window.history.replaceState({}, '', window.location.pathname);
   }
 }
 
 window.addEventListener('load', () => {
   document.getElementById('playerName').focus();
-  checkAutoJoin();
+
+  // Check for saved session FIRST (reconnect after page refresh)
+  const session = loadSession();
+  if (session) {
+    // Wait for socket to connect, then try rejoin
+    socket.on('connect', function onFirstConnect() {
+      socket.off('connect', onFirstConnect);
+      tryRejoin(session);
+    });
+    if (socket.connected) tryRejoin(session);
+  } else {
+    // No session — check for URL auto-join
+    checkAutoJoin();
+  }
 });
 
 window.addEventListener('resize', () => {
@@ -1604,4 +1685,4 @@ window.addEventListener('resize', () => {
   if (c) { c.width = window.innerWidth; c.height = window.innerHeight; }
 });
 
-console.log('🎲 LUDO ROYALE v2 — Ready!');
+console.log('🎲 LUDO ROYALE v3 — Ready!');
