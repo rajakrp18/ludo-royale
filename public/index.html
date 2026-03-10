@@ -32,6 +32,19 @@
           <button class="btn btn-primary" id="btnCreateRoom"><span class="btn-icon">✦</span> Create Room</button>
           <button class="btn btn-secondary" id="btnShowJoin"><span class="btn-icon">→</span> Join Room</button>
         </div>
+
+        <!-- Play vs Computer -->
+        <button class="btn btn-bot" id="btnShowBot" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;box-shadow:0 4px 20px rgba(139,92,246,0.3);">
+          <span class="btn-icon">🤖</span> Play vs Computer
+        </button>
+        <div id="botSection" class="join-section hidden">
+          <div style="display:flex;gap:8px;width:100%;">
+            <button class="btn btn-bot-diff active" data-diff="easy" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#94a3b8;font-size:0.85rem;cursor:pointer;">😊 Easy</button>
+            <button class="btn btn-bot-diff" data-diff="medium" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(251,191,36,0.3);background:rgba(251,191,36,0.1);color:#fbbf24;font-size:0.85rem;cursor:pointer;font-weight:600;">🧠 Medium</button>
+            <button class="btn btn-bot-diff" data-diff="hard" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.06);color:#94a3b8;font-size:0.85rem;cursor:pointer;">🔥 Hard</button>
+          </div>
+          <button class="btn btn-accent" id="btnStartBot" style="width:100%;"><span class="btn-icon">▶</span> Start Game vs Bot</button>
+        </div>
         <div id="joinSection" class="join-section hidden">
           <div class="form-group">
             <label for="roomCodeInput">Room Code</label>

@@ -1,9 +1,128 @@
 /**
  * ╔═══════════════════════════════════════════════════════════╗
  * ║           LUDO ROYALE — CLIENT GAME ENGINE v2             ║
- * ║   Pawn tokens • Fixed movement • Touch support            ║
+ * ║   Pawn tokens • Fixed movement • Touch support • Sound    ║
  * ╚═══════════════════════════════════════════════════════════╝
  */
+
+// ═══════════════════════════════════════════════════════════════
+// 0. SOUND EFFECTS ENGINE (Web Audio API — no files needed)
+// ═══════════════════════════════════════════════════════════════
+
+const SFX = {
+  ctx: null,
+  enabled: true,
+
+  /** Initialize AudioContext on first user interaction (browser requirement) */
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  },
+
+  /** Play a tone with given frequency, duration, and type */
+  tone(freq, dur = 0.1, type = 'square', vol = 0.15) {
+    if (!this.ctx || !this.enabled) return;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.value = freq;
+    g.gain.value = vol;
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+    o.connect(g);
+    g.connect(this.ctx.destination);
+    o.start();
+    o.stop(this.ctx.currentTime + dur);
+  },
+
+  /** Dice rolling — rapid clicking sounds */
+  diceRoll() {
+    this.init();
+    for (let i = 0; i < 8; i++) {
+      setTimeout(() => {
+        this.tone(200 + Math.random() * 400, 0.04, 'square', 0.08);
+      }, i * 60);
+    }
+  },
+
+  /** Dice result — satisfying thud */
+  diceResult(value) {
+    this.init();
+    this.tone(150, 0.12, 'triangle', 0.2);
+    if (value === 6) {
+      // Six! Celebration jingle
+      setTimeout(() => this.tone(523, 0.1, 'square', 0.15), 100);
+      setTimeout(() => this.tone(659, 0.1, 'square', 0.15), 200);
+      setTimeout(() => this.tone(784, 0.15, 'square', 0.18), 300);
+    }
+  },
+
+  /** Pawn moves on track */
+  pawnMove() {
+    this.init();
+    this.tone(440, 0.06, 'sine', 0.12);
+    setTimeout(() => this.tone(520, 0.06, 'sine', 0.1), 60);
+  },
+
+  /** Pawn enters the board */
+  pawnEnter() {
+    this.init();
+    this.tone(330, 0.08, 'square', 0.12);
+    setTimeout(() => this.tone(440, 0.08, 'square', 0.12), 80);
+    setTimeout(() => this.tone(550, 0.1, 'square', 0.14), 160);
+  },
+
+  /** Capture opponent — dramatic */
+  capture() {
+    this.init();
+    this.tone(180, 0.15, 'sawtooth', 0.12);
+    setTimeout(() => this.tone(120, 0.2, 'sawtooth', 0.1), 100);
+    setTimeout(() => this.tone(300, 0.1, 'square', 0.15), 250);
+    setTimeout(() => this.tone(400, 0.1, 'square', 0.15), 330);
+  },
+
+  /** Token reaches home (finish) */
+  finish() {
+    this.init();
+    [523, 659, 784, 1047].forEach((f, i) => {
+      setTimeout(() => this.tone(f, 0.15, 'sine', 0.15), i * 120);
+    });
+  },
+
+  /** Turn changes to another player */
+  turnChange() {
+    this.init();
+    this.tone(350, 0.08, 'sine', 0.08);
+  },
+
+  /** Extra turn notification */
+  extraTurn() {
+    this.init();
+    this.tone(500, 0.08, 'square', 0.1);
+    setTimeout(() => this.tone(600, 0.08, 'square', 0.1), 100);
+  },
+
+  /** No valid moves */
+  noMoves() {
+    this.init();
+    this.tone(200, 0.15, 'triangle', 0.1);
+    setTimeout(() => this.tone(150, 0.2, 'triangle', 0.08), 150);
+  },
+
+  /** Victory! */
+  victory() {
+    this.init();
+    const notes = [523, 587, 659, 784, 880, 1047];
+    notes.forEach((f, i) => {
+      setTimeout(() => this.tone(f, 0.2, 'square', 0.12 + i * 0.01), i * 150);
+    });
+    // Final chord
+    setTimeout(() => {
+      this.tone(523, 0.5, 'sine', 0.1);
+      this.tone(659, 0.5, 'sine', 0.1);
+      this.tone(784, 0.5, 'sine', 0.1);
+    }, notes.length * 150);
+  },
+};
 
 // ═══════════════════════════════════════════════════════════════
 // 1. CONSTANTS
@@ -349,6 +468,7 @@ const GS = {
 // ─── Token click handler (critical fix) ────────────────
 function handleTokenClick(tokenId) {
   if (!GS.validMoveTokens.includes(tokenId)) return;
+  SFX.init();
   console.log('[MOVE] Token', tokenId);
 
   // Clear moveable state immediately for responsiveness
@@ -393,7 +513,9 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
   GS.diceValue = value;
 
   animateDice(value, () => {
+    SFX.diceResult(value);
     if (threeSixes) {
+      SFX.noMoves();
       setMsg('Three 6s! Turn skipped.');
       return;
     }
@@ -401,12 +523,17 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
     if (playerIndex === GS.myIndex) {
       GS.validMoveTokens = validMoves || [];
       if (validMoves.length === 0) {
+        SFX.noMoves();
         setMsg(`No moves available. Turn passes.`);
       } else if (validMoves.length === 1) {
         // Auto-move single option after brief delay so user sees the dice
         setTimeout(() => handleTokenClick(validMoves[0]), 400);
       } else {
-        setMsg(`Rolled ${value}! Tap a glowing pawn.`);
+        if (value === 6) {
+          setMsg(`Rolled 6! Tap a glowing pawn. Move it off start to bring out others.`);
+        } else {
+          setMsg(`Rolled ${value}! Tap a glowing pawn.`);
+        }
       }
     } else {
       const name = GS.players[playerIndex]?.name || 'Player';
@@ -419,9 +546,18 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
 socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }) => {
   GS.tokens = gs.tokens;
   GS.validMoveTokens = [];
+
+  // Play appropriate sound
   if (captured) {
+    SFX.capture();
     const capName = GS.players[captured.playerIndex]?.name || 'Player';
     showToast(`Captured ${capName}'s token!`);
+  } else if (move && move.type === 'finish') {
+    SFX.finish();
+  } else if (move && move.type === 'enter') {
+    SFX.pawnEnter();
+  } else {
+    SFX.pawnMove();
   }
   renderAllTokens();
 });
@@ -431,6 +567,7 @@ socket.on('extraTurn', ({ playerIndex, reason }) => {
   GS.validMoveTokens = [];
   GS.rolling = false;
   updateDice(null);
+  SFX.extraTurn();
 
   if (playerIndex === GS.myIndex) {
     setMsg(`Bonus turn! Roll again.`);
@@ -448,6 +585,7 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
   GS.diceValue = null;
   GS.validMoveTokens = [];
   GS.rolling = false;
+  SFX.turnChange();
 
   updateGamePlayers();
   updateDice(null);
@@ -457,13 +595,15 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
     setMsg(`Your turn! Roll the dice.`);
     enableDice();
   } else {
-    const name = GS.players[currentTurn]?.name || 'Player';
-    setMsg(`${name}'s turn...`);
+    const p = GS.players[currentTurn];
+    const name = p?.name || 'Player';
+    setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
     disableDice();
   }
 });
 
 socket.on('gameOver', ({ winner, winnerName, winnerColor }) => {
+  SFX.victory();
   showScreen('winner');
   document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
   document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
@@ -524,6 +664,7 @@ function setMsg(msg) {
 
 // Create Room
 document.getElementById('btnCreateRoom').addEventListener('click', () => {
+  SFX.init(); // Must init on user gesture for browser audio policy
   const name = document.getElementById('playerName').value.trim();
   if (!name) return showError('Enter your name first.');
   GS.myName = name;
@@ -550,6 +691,7 @@ document.getElementById('btnShowJoin').addEventListener('click', () => {
 
 // Join Room
 document.getElementById('btnJoinRoom').addEventListener('click', () => {
+  SFX.init();
   const name = document.getElementById('playerName').value.trim();
   const code = document.getElementById('roomCodeInput').value.trim();
   if (!name) return showError('Enter your name first.');
@@ -571,6 +713,58 @@ document.getElementById('btnJoinRoom').addEventListener('click', () => {
 // Enter key
 document.getElementById('playerName').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnCreateRoom').click(); });
 document.getElementById('roomCodeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnJoinRoom').click(); });
+
+// ─── PLAY VS COMPUTER ───────────────────────────────────
+let selectedDifficulty = 'medium';
+
+document.getElementById('btnShowBot').addEventListener('click', () => {
+  const section = document.getElementById('botSection');
+  section.classList.toggle('hidden');
+  // Hide join section if open
+  document.getElementById('joinSection').classList.add('hidden');
+});
+
+// Difficulty selection buttons
+document.querySelectorAll('.btn-bot-diff').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn-bot-diff').forEach(b => {
+      b.style.borderColor = 'rgba(255,255,255,0.15)';
+      b.style.background = 'rgba(255,255,255,0.06)';
+      b.style.color = '#94a3b8';
+      b.style.fontWeight = 'normal';
+    });
+    btn.style.borderColor = 'rgba(251,191,36,0.3)';
+    btn.style.background = 'rgba(251,191,36,0.1)';
+    btn.style.color = '#fbbf24';
+    btn.style.fontWeight = '600';
+    selectedDifficulty = btn.dataset.diff;
+  });
+});
+
+// Start bot game
+document.getElementById('btnStartBot').addEventListener('click', () => {
+  SFX.init();
+  const name = document.getElementById('playerName').value.trim();
+  if (!name) return showError('Enter your name first.');
+  GS.myName = name;
+  GS.isHost = true;
+
+  socket.emit('createBotGame', {
+    playerName: name,
+    botCount: 1,
+    difficulty: selectedDifficulty,
+  }, (r) => {
+    if (r.success) {
+      GS.myIndex = r.playerIndex;
+      GS.myColor = r.color;
+      GS.roomCode = r.roomCode;
+      GS.players = r.players;
+      // Game will auto-start via gameStarted event from server
+    } else {
+      showError(r.error || 'Failed to start bot game.');
+    }
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════
 // 7. LOBBY SCREEN
@@ -634,14 +828,15 @@ function initGameScreen() {
     setMsg('Your turn! Roll the dice.');
     enableDice();
   } else {
-    const name = GS.players[GS.currentTurn]?.name || 'Player';
-    setMsg(`${name}'s turn...`);
+    const p = GS.players[GS.currentTurn];
+    const name = p?.name || 'Player';
+    setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
     disableDice();
   }
 
-  // AUTO-START VOICE CHAT when game begins
-  // Small delay so the game screen renders first, then mic prompt appears
-  if (!voiceState.active) {
+  // AUTO-START VOICE CHAT when game begins (skip for bot games)
+  const hasBots = GS.players.some(p => p.isBot);
+  if (!voiceState.active && !hasBots) {
     setTimeout(() => {
       startVoice().catch(() => {
         console.log('[VOICE] Auto-start failed — user can tap 🎤 manually');
@@ -660,7 +855,8 @@ function updateGamePlayers() {
     dot.className = 'gp-dot';
     dot.style.background = COLORS[p.color]?.bg || '#888';
     const nm = document.createElement('span');
-    nm.textContent = p.name + (i === GS.myIndex ? ' (You)' : '');
+    const suffix = i === GS.myIndex ? ' (You)' : (p.isBot ? ' 🤖' : '');
+    nm.textContent = p.name + suffix;
     d.appendChild(dot); d.appendChild(nm);
     if (i === GS.currentTurn) { const e = document.createElement('span'); e.textContent = ' 🎲'; d.appendChild(e); }
     c.appendChild(d);
@@ -717,6 +913,8 @@ function animateDice(finalValue, callback) {
 function triggerRoll() {
   if (GS.rolling || GS.currentTurn !== GS.myIndex) return;
   if (document.getElementById('btnRollDice').disabled) return;
+  SFX.init(); // Ensure audio context on user gesture
+  SFX.diceRoll();
   disableDice();
   socket.emit('rollDice', null, (r) => {
     if (!r?.success) { enableDice(); showToast(r?.error || 'Cannot roll.'); }

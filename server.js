@@ -290,9 +290,9 @@ function nextTurn(room) {
   let next = (room.gameState.currentTurn + 1) % total;
   let attempts = 0;
 
-  // Skip disconnected players
+  // Skip disconnected players (but not bots)
   while (attempts < total) {
-    if (room.players[next] && room.players[next].connected) {
+    if (room.players[next] && (room.players[next].connected || room.players[next].isBot)) {
       break;
     }
     next = (next + 1) % total;
@@ -303,6 +303,263 @@ function nextTurn(room) {
   room.gameState.diceValue = null;
   room.gameState.validMoves = [];
   room.gameState.rolled = false;
+
+  // If next player is a bot, schedule their turn
+  if (room.players[next] && room.players[next].isBot) {
+    scheduleBotTurn(room);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AI BOT ENGINE
+// ═══════════════════════════════════════════════════════════════
+//
+// The bot runs entirely on the server. When it's a bot's turn:
+// 1. Wait a realistic delay (so it doesn't feel instant)
+// 2. Roll the dice
+// 3. Score all valid moves using a strategy engine
+// 4. Pick the best move and execute it
+// 5. Handle bonus turns (6s, captures) by looping
+//
+// DIFFICULTY LEVELS:
+// - easy:   random moves, sometimes misses good plays
+// - medium: prefers captures and exits, decent strategy
+// - hard:   full scoring system, plays optimally
+
+/**
+ * Score a move for AI decision-making.
+ * Higher score = better move. Returns 0-100.
+ */
+function scoreBotMove(room, botIndex, move, diceValue, difficulty) {
+  const botColor = room.players[botIndex].color;
+  const tokens = room.gameState.tokens[botIndex];
+  const token = tokens[move.tokenId];
+
+  // Easy: mostly random
+  if (difficulty === 'easy') {
+    let score = Math.random() * 50;
+    if (move.type === 'finish') score += 30;
+    if (move.type === 'enter') score += 15;
+    return score;
+  }
+
+  let score = 10; // base score for any valid move
+
+  // ─── FINISH (highest priority) ─────────────────────────
+  if (move.type === 'finish') {
+    score += 100; // Always finish a token
+  }
+
+  // ─── CAPTURE (very high priority) ──────────────────────
+  if (move.type === 'move' || move.type === 'enter') {
+    const targetPos = move.to;
+    if (!isSafePosition(targetPos)) {
+      for (let i = 0; i < room.players.length; i++) {
+        if (i === botIndex) continue;
+        const oppTokens = room.gameState.tokens[i];
+        if (oppTokens) {
+          for (const ot of oppTokens) {
+            if (ot.state === 'active' && ot.trackPos === targetPos) {
+              score += 80; // Capture is great
+              // Extra points if opponent token was far from their home
+              const oppColor = room.players[i].color;
+              const oppSteps = (ot.trackPos - START_POSITIONS[oppColor] + BOARD_SIZE) % BOARD_SIZE;
+              score += Math.min(oppSteps, 20); // More points for capturing advanced tokens
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ─── ENTER (get tokens on the board) ───────────────────
+  if (move.type === 'enter') {
+    const tokensInHome = tokens.filter(t => t.state === 'home').length;
+    score += 40 + tokensInHome * 5; // Higher priority when many tokens stuck in home
+  }
+
+  // ─── MOVE TO SAFETY ────────────────────────────────────
+  if (move.type === 'move' && isSafePosition(move.to)) {
+    score += 25; // Landing on safe spot is good
+  }
+
+  // ─── ENTER HOME COLUMN (safe from capture) ─────────────
+  if (move.type === 'homeColumn') {
+    score += 60; // Getting into home column is very good
+  }
+
+  if (move.type === 'homeColumnMove') {
+    score += 50 + move.homeColPos * 5; // Closer to finish = better
+  }
+
+  // ─── ADVANCE TOKENS THAT ARE CLOSER TO HOME ───────────
+  if (move.type === 'move' && token.state === 'active') {
+    const stepsFromStart = (token.trackPos - START_POSITIONS[botColor] + BOARD_SIZE) % BOARD_SIZE;
+    score += stepsFromStart * 0.3; // Prefer advancing tokens that are further along
+  }
+
+  // ─── ESCAPE DANGER (move away from opponent's path) ────
+  if (move.type === 'move' && token.state === 'active' && difficulty === 'hard') {
+    // Check if current position is threatened by any opponent
+    for (let i = 0; i < room.players.length; i++) {
+      if (i === botIndex) continue;
+      const oppTokens = room.gameState.tokens[i];
+      if (!oppTokens) continue;
+      for (const ot of oppTokens) {
+        if (ot.state === 'active') {
+          // Can they reach us in 1-6 moves?
+          for (let d = 1; d <= 6; d++) {
+            const oppColor = room.players[i].color;
+            const oppSteps = (ot.trackPos - START_POSITIONS[oppColor] + BOARD_SIZE) % BOARD_SIZE;
+            const oppNewPos = getTrackPosition(oppColor, oppSteps + d);
+            if (oppNewPos === token.trackPos && !isSafePosition(token.trackPos)) {
+              score += 15; // Bonus for moving a threatened token
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Medium difficulty: add some randomness
+  if (difficulty === 'medium') {
+    score += Math.random() * 15;
+  }
+
+  return score;
+}
+
+/**
+ * Execute a full bot turn: roll → pick move → execute → handle bonus turns.
+ */
+function playBotTurn(room) {
+  if (room.status !== 'playing') return;
+
+  const gs = room.gameState;
+  const botIndex = gs.currentTurn;
+  const bot = room.players[botIndex];
+  if (!bot || !bot.isBot) return;
+
+  const difficulty = bot.difficulty || 'medium';
+
+  // ─── ROLL DICE ──────────────────────────────────────────
+  const value = Math.floor(Math.random() * 6) + 1;
+  gs.diceValue = value;
+  gs.rolled = true;
+
+  // Three consecutive sixes check
+  if (value === 6) {
+    gs.consecutiveSixes++;
+    if (gs.consecutiveSixes >= 3) {
+      gs.consecutiveSixes = 0;
+      gs.validMoves = [];
+
+      io.to(room.code).emit('diceRolled', {
+        value, playerIndex: botIndex, validMoves: [], threeSixes: true,
+      });
+
+      setTimeout(() => {
+        nextTurn(room);
+        io.to(room.code).emit('turnChanged', {
+          currentTurn: gs.currentTurn, gameState: gs,
+        });
+      }, 1500);
+      return;
+    }
+  } else {
+    gs.consecutiveSixes = 0;
+  }
+
+  // Get valid moves
+  const validMoves = getValidMoves(room, botIndex, value);
+  gs.validMoves = validMoves;
+
+  io.to(room.code).emit('diceRolled', {
+    value, playerIndex: botIndex,
+    validMoves: validMoves.map(m => m.tokenId),
+  });
+
+  // ─── NO VALID MOVES → auto-skip ────────────────────────
+  if (validMoves.length === 0) {
+    setTimeout(() => {
+      nextTurn(room);
+      io.to(room.code).emit('turnChanged', {
+        currentTurn: gs.currentTurn, gameState: gs,
+      });
+    }, 1200);
+    return;
+  }
+
+  // ─── PICK BEST MOVE ────────────────────────────────────
+  setTimeout(() => {
+    if (room.status !== 'playing') return;
+
+    let bestMove = validMoves[0];
+    let bestScore = -1;
+
+    for (const move of validMoves) {
+      const score = scoreBotMove(room, botIndex, move, value, difficulty);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    }
+
+    // Execute the move
+    const captured = executeMove(room, botIndex, bestMove.tokenId, bestMove);
+
+    // Check win
+    if (checkWin(room, botIndex)) {
+      gs.winner = botIndex;
+      room.status = 'finished';
+
+      io.to(room.code).emit('tokenMoved', {
+        playerIndex: botIndex, tokenId: bestMove.tokenId,
+        move: bestMove, captured, gameState: gs,
+      });
+      io.to(room.code).emit('gameOver', {
+        winner: botIndex, winnerName: bot.name, winnerColor: bot.color,
+      });
+      return;
+    }
+
+    // Broadcast move
+    io.to(room.code).emit('tokenMoved', {
+      playerIndex: botIndex, tokenId: bestMove.tokenId,
+      move: bestMove, captured, gameState: gs,
+    });
+
+    // Handle bonus turn
+    const gotExtraTurn = value === 6 || captured !== null;
+    if (gotExtraTurn) {
+      gs.diceValue = null;
+      gs.validMoves = [];
+      gs.rolled = false;
+
+      io.to(room.code).emit('extraTurn', {
+        playerIndex: botIndex,
+        reason: value === 6 ? 'Rolled a 6!' : 'Captured!',
+      });
+
+      // Bot plays again after delay
+      scheduleBotTurn(room);
+    } else {
+      nextTurn(room);
+      io.to(room.code).emit('turnChanged', {
+        currentTurn: gs.currentTurn, gameState: gs,
+      });
+    }
+  }, 800 + Math.random() * 600); // Realistic thinking delay (0.8-1.4s)
+}
+
+/**
+ * Schedule a bot turn with a human-like delay.
+ */
+function scheduleBotTurn(room) {
+  if (room.status !== 'playing') return;
+  const delay = 1000 + Math.random() * 800; // 1.0-1.8s delay before rolling
+  setTimeout(() => playBotTurn(room), delay);
 }
 
 // ─── SOCKET.IO EVENT HANDLERS ────────────────────────────────
@@ -342,6 +599,79 @@ io.on('connection', (socket) => {
       color: PLAYER_COLORS[0],
       players: room.players.map(p => ({ name: p.name, color: p.color, connected: p.connected })),
     });
+  });
+
+  /**
+   * CREATE BOT GAME — Play vs Computer
+   * Creates a room with 1 human + 1-3 AI bots, starts immediately.
+   * Client sends: { playerName, botCount (1-3), difficulty ('easy'|'medium'|'hard') }
+   */
+  socket.on('createBotGame', ({ playerName, botCount = 1, difficulty = 'medium' }, callback) => {
+    const roomCode = generateRoomCode();
+    const bots = Math.min(Math.max(botCount, 1), 3); // 1-3 bots
+    const botNames = ['Captain Bot', 'Sir Ludo', 'Lady Dice', 'Duke Roll'];
+
+    const room = {
+      code: roomCode,
+      host: socket.id,
+      players: [
+        { id: socket.id, name: playerName, color: PLAYER_COLORS[0], connected: true, isBot: false },
+      ],
+      gameState: null,
+      status: 'waiting',
+      maxPlayers: bots + 1,
+      createdAt: Date.now(),
+      hasBots: true,
+    };
+
+    // Add bot players
+    for (let i = 0; i < bots; i++) {
+      room.players.push({
+        id: `bot-${roomCode}-${i}`,
+        name: botNames[i] || `Bot ${i + 1}`,
+        color: PLAYER_COLORS[i + 1],
+        connected: true,
+        isBot: true,
+        difficulty: difficulty,
+      });
+    }
+
+    rooms[roomCode] = room;
+    players[socket.id] = { roomCode, playerIndex: 0, name: playerName };
+    socket.join(roomCode);
+
+    console.log(`[BOT GAME] ${roomCode} by ${playerName} with ${bots} bot(s) [${difficulty}]`);
+
+    // Auto-start game immediately
+    room.status = 'playing';
+    room.gameState = {
+      tokens: room.players.map(() => createTokens()),
+      currentTurn: 0, // Human goes first
+      diceValue: null,
+      validMoves: [],
+      rolled: false,
+      consecutiveSixes: 0,
+      winner: null,
+    };
+
+    const playerList = room.players.map(p => ({ name: p.name, color: p.color, isBot: p.isBot || false }));
+
+    callback({
+      success: true,
+      roomCode,
+      playerIndex: 0,
+      color: PLAYER_COLORS[0],
+      players: playerList,
+    });
+
+    // Emit game started (slight delay so client can process the callback first)
+    setTimeout(() => {
+      io.to(roomCode).emit('gameStarted', {
+        gameState: room.gameState,
+        players: playerList,
+        currentTurn: 0,
+      });
+    }, 200);
   });
 
   /**
@@ -559,8 +889,9 @@ io.on('connection', (socket) => {
       gameState: gs,
     });
 
-    // Determine next action
-    const gotExtraTurn = gs.diceValue === 6 || captured !== null;
+    // Determine next action — SAVE dice value before clearing
+    const rolledValue = gs.diceValue;
+    const gotExtraTurn = rolledValue === 6 || captured !== null;
 
     if (gotExtraTurn) {
       // Extra turn: reset dice state but keep same player
@@ -570,7 +901,7 @@ io.on('connection', (socket) => {
 
       io.to(playerInfo.roomCode).emit('extraTurn', {
         playerIndex: playerInfo.playerIndex,
-        reason: gs.diceValue === 6 ? 'Rolled a 6!' : 'Captured opponent!',
+        reason: rolledValue === 6 ? 'Rolled a 6!' : 'Captured opponent!',
       });
     } else {
       // Normal: advance to next player
