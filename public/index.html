@@ -116,23 +116,15 @@
         <div class="game-players" id="gamePlayers"></div>
       </div>
 
-      <!-- Video feeds container (overlays board corners) -->
-      <div class="video-container" id="videoContainer">
-        <div class="video-feed" id="videoSelf">
+      <!-- Video strip — full width above board, 50/50 split -->
+      <div class="video-strip hidden" id="videoStrip">
+        <div class="video-panel" id="videoSelf">
           <video id="localVideo" autoplay muted playsinline></video>
-          <span class="video-name" id="videoSelfName">You</span>
+          <span class="video-label" id="videoSelfName">You</span>
         </div>
-        <div class="video-feed hidden" id="videoRemote1">
+        <div class="video-panel" id="videoRemote1">
           <video id="remoteVideo1" autoplay playsinline></video>
-          <span class="video-name" id="videoRemoteName1"></span>
-        </div>
-        <div class="video-feed hidden" id="videoRemote2">
-          <video id="remoteVideo2" autoplay playsinline></video>
-          <span class="video-name" id="videoRemoteName2"></span>
-        </div>
-        <div class="video-feed hidden" id="videoRemote3">
-          <video id="remoteVideo3" autoplay playsinline></video>
-          <span class="video-name" id="videoRemoteName3"></span>
+          <span class="video-label" id="videoRemoteName1">Opponent</span>
         </div>
       </div>
 
@@ -141,6 +133,7 @@
           <svg id="ludoBoard" viewBox="0 0 615 615" class="ludo-board"></svg>
         </div>
       </div>
+
       <div class="game-controls">
         <div class="dice-area">
           <div class="dice-box" id="diceBox">
@@ -152,9 +145,11 @@
           <button class="btn-roll" id="btnRollDice">ROLL DICE</button>
         </div>
         <div class="game-message" id="gameMessage">Your turn! Roll the dice.</div>
-        <button class="btn-chat-toggle" id="btnChatToggle">💬</button>
-        <button class="btn-voice-toggle" id="btnVoiceToggle" title="Join Voice Chat">🎤</button>
-        <button class="btn-video-toggle" id="btnVideoToggle" title="Toggle Camera">📷</button>
+        <div class="control-btns">
+          <button class="btn-video-toggle" id="btnVideoToggle" title="Toggle Camera">📷</button>
+          <button class="btn-voice-toggle" id="btnVoiceToggle" title="Voice Chat">🎤</button>
+          <button class="btn-chat-toggle" id="btnChatToggle">💬</button>
+        </div>
       </div>
       <div class="chat-panel hidden" id="chatPanel">
         <div class="chat-header"><span>Chat</span><button class="btn-close-chat" id="btnCloseChat">×</button></div>

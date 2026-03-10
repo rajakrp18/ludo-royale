@@ -1003,6 +1003,7 @@ const videoState = { active: false, stream: null };
 document.getElementById('btnVideoToggle').addEventListener('click', async () => {
   SFX.init();
   const btn = document.getElementById('btnVideoToggle');
+  const strip = document.getElementById('videoStrip');
 
   if (videoState.active) {
     // Stop camera
@@ -1011,7 +1012,7 @@ document.getElementById('btnVideoToggle').addEventListener('click', async () => 
       videoState.stream = null;
     }
     document.getElementById('localVideo').srcObject = null;
-    document.getElementById('videoSelf').classList.add('hidden');
+    strip.classList.add('hidden');
     videoState.active = false;
     btn.classList.remove('video-on');
     btn.textContent = '📷';
@@ -1021,16 +1022,24 @@ document.getElementById('btnVideoToggle').addEventListener('click', async () => 
 
   try {
     videoState.stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 160 }, height: { ideal: 120 }, facingMode: 'user' },
+      video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
       audio: false,
     });
     document.getElementById('localVideo').srcObject = videoState.stream;
-    document.getElementById('videoSelf').classList.remove('hidden');
     document.getElementById('videoSelfName').textContent = GS.myName || 'You';
+
+    // Set opponent name
+    const opponent = GS.players.find((p, i) => i !== GS.myIndex);
+    if (opponent) {
+      document.getElementById('videoRemoteName1').textContent = opponent.name || 'Opponent';
+    }
+
+    // Show the full strip
+    strip.classList.remove('hidden');
     videoState.active = true;
     btn.classList.add('video-on');
     btn.textContent = '📹';
-    showToast('Camera on');
+    showToast('Camera on — share with opponent via 🎤 voice');
 
     // Share video stream with existing WebRTC peers
     if (voiceState.active) {
@@ -1399,22 +1408,35 @@ function createPeerConnection(peerId, peerName) {
 
   // When we receive audio from the remote peer
   pc.ontrack = (event) => {
-    console.log(`[VOICE] Receiving audio from ${peerName}`);
     const stream = event.streams[0];
+    const track = event.track;
     voiceState.remoteStreams[peerId] = stream;
 
-    // Create or reuse audio element to play remote audio
-    let audioEl = document.getElementById(`audio-${peerId}`);
-    if (!audioEl) {
-      audioEl = document.createElement('audio');
-      audioEl.id = `audio-${peerId}`;
-      audioEl.autoplay = true;
-      audioEl.playsInline = true;
-      document.getElementById('remoteAudioContainer').appendChild(audioEl);
+    if (track.kind === 'audio') {
+      console.log(`[VOICE] Receiving audio from ${peerName}`);
+      let audioEl = document.getElementById(`audio-${peerId}`);
+      if (!audioEl) {
+        audioEl = document.createElement('audio');
+        audioEl.id = `audio-${peerId}`;
+        audioEl.autoplay = true;
+        audioEl.playsInline = true;
+        document.getElementById('remoteAudioContainer').appendChild(audioEl);
+      }
+      audioEl.srcObject = stream;
+      showToast(`${peerName} connected to voice`);
     }
-    audioEl.srcObject = stream;
 
-    showToast(`${peerName} connected to voice`);
+    if (track.kind === 'video') {
+      console.log(`[VIDEO] Receiving video from ${peerName}`);
+      const remoteVideo = document.getElementById('remoteVideo1');
+      if (remoteVideo) {
+        remoteVideo.srcObject = stream;
+        document.getElementById('videoRemoteName1').textContent = peerName;
+        // Show strip if not already visible
+        document.getElementById('videoStrip').classList.remove('hidden');
+      }
+      showToast(`${peerName} shared their camera`);
+    }
   };
 
   // ICE candidates — network path discovery
@@ -1747,6 +1769,7 @@ function checkAutoJoin() {
     document.getElementById('btnCreateRoom').style.display = 'none';
     document.getElementById('btnShowJoin').style.display = 'none';
     document.getElementById('btnShowBot').style.display = 'none';
+    document.getElementById('btnShowLocal').style.display = 'none';
 
     const joinSection = document.getElementById('joinSection');
     joinSection.classList.remove('hidden');
