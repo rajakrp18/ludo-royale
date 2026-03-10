@@ -168,8 +168,9 @@ html, body {
   display: flex; flex-direction: column;
   height: 100%; width: 100%;
   background: linear-gradient(180deg, #0c1222, #162032, #0c1222);
+  overflow: hidden;
 }
-.game-topbar { padding: 6px 10px; flex-shrink: 0; }
+.game-topbar { padding: 4px 10px; flex-shrink: 0; }
 .game-players { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .gp-item {
   display: flex; align-items: center; gap: 5px;
@@ -183,26 +184,28 @@ html, body {
 .gp-item.disconnected { opacity: 0.3; }
 .gp-dot { width: 11px; height: 11px; border-radius: 50%; }
 
-/* Board takes ALL remaining space */
+/* Board — flush against top, no vertical centering gap */
 .board-wrapper {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 4px; min-height: 0; overflow: hidden;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 2px 4px 0; flex-shrink: 0;
 }
 .board-frame {
   background: linear-gradient(145deg, #C8A84E, #8B6914, #A07828, #C8A84E);
   border-radius: 12px; padding: 5px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-  /* KEY: board fills screen while staying square */
-  width: min(98vw, calc(100vh - 140px));
-  height: min(98vw, calc(100vh - 140px));
+  /* Board sized to leave room for controls (topbar ~36px + controls ~70px) */
+  width: min(100vw - 8px, calc(100vh - 120px), calc(100vw));
+  height: min(100vw - 8px, calc(100vh - 120px), calc(100vw));
   max-width: 750px; max-height: 750px;
 }
 .ludo-board { width: 100%; height: 100%; display: block; border-radius: 7px; }
 
-/* Controls bar */
+/* Controls bar — sits right below board, fills remaining space */
 .game-controls {
+  flex: 1;
   display: flex; align-items: center; justify-content: center;
-  gap: 12px; padding: 6px 12px; flex-shrink: 0; position: relative;
+  gap: 12px; padding: 8px 12px;
+  position: relative; min-height: 60px;
 }
 .dice-area { display: flex; align-items: center; gap: 10px; }
 .dice-box {
@@ -313,16 +316,17 @@ html, body {
   .lobby-card { padding: 28px 20px; }
   .room-code-value { font-size: 1.6rem; letter-spacing: 4px; }
   .player-slots { grid-template-columns: 1fr; }
-  .game-topbar { padding: 3px 6px; }
+  .game-topbar { padding: 2px 6px; }
   .gp-item { padding: 3px 7px; font-size: 0.7rem; }
-  .game-controls { gap: 6px; padding: 4px 6px; }
+  .game-controls { gap: 8px; padding: 6px 8px; min-height: 50px; }
   .game-message { font-size: 0.72rem; max-width: 130px; }
-  .btn-roll { padding: 7px 14px; font-size: 0.82rem; }
-  .dice-box { width: 42px; height: 42px; }
+  .btn-roll { padding: 8px 16px; font-size: 0.84rem; }
+  .dice-box { width: 44px; height: 44px; }
   .board-frame {
     padding: 3px; border-radius: 8px;
-    width: min(100vw - 4px, calc(100vh - 110px));
-    height: min(100vw - 4px, calc(100vh - 110px));
+    /* Phone: board = screen width, minus a bit, leaving room for top+bottom bars */
+    width: min(100vw - 4px, calc(100vh - 105px));
+    height: min(100vw - 4px, calc(100vh - 105px));
   }
   .chat-panel { width: calc(100vw - 20px); right: 10px; }
 }

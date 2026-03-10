@@ -160,7 +160,15 @@ function renderBoard(svg) {
     svg.appendChild(el('polygon', { points: pts, fill: COLORS[color].bg, opacity: 0.88 }));
   }
   svg.appendChild(el('rect', { x: cx, y: cy, width: cs, height: cs, fill: 'none', stroke: '#777', 'stroke-width': 1.5 }));
-  svg.appendChild(el('circle', { cx: mx, cy: my, r: 13, fill: '#FFF', stroke: '#888', 'stroke-width': 1 }));
+  svg.appendChild(el('circle', { cx: mx, cy: my, r: 16, fill: '#FFF', stroke: '#888', 'stroke-width': 1.2 }));
+  // HOME text in center
+  const homeText = el('text', {
+    x: mx, y: my + 1, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+    'font-size': 8, 'font-weight': 'bold', 'font-family': 'Fredoka, sans-serif',
+    fill: '#555', 'letter-spacing': 1,
+  });
+  homeText.textContent = 'HOME';
+  svg.appendChild(homeText);
 
   // Entry arrows
   for (const [r, c, txt] of [[6,0,'→'],[0,8,'↓'],[8,14,'←'],[14,6,'↑']]) {
