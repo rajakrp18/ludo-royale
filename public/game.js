@@ -1560,12 +1560,21 @@ async function startVoice() {
       video: false,
     });
 
-    voiceState.active = true;
+    // Add audio tracks to existing peer connections (if initialized by Video first)
+    for (const [peerId, pc] of Object.entries(voiceState.peers)) {
+      voiceState.localStream.getAudioTracks().forEach(track => {
+        pc.addTrack(track, voiceState.localStream);
+      });
+    }
+
+    if (!voiceState.active) {
+      voiceState.active = true;
+      // Tell server we're ready for voice — server will send us list of peers
+      socket.emit('voiceReady');
+    }
+    
     updateVoiceButton();
     showToast('Voice chat joined! 🎤');
-
-    // Tell server we're ready for voice — server will send us list of peers
-    socket.emit('voiceReady');
   } catch (err) {
     console.error('[VOICE] Microphone access denied:', err);
     if (err.name === 'NotAllowedError') {
@@ -1597,10 +1606,25 @@ function stopVoice() {
     voiceState.localStream = null;
   }
 
+  // Turn off video UI since peer connections were closed
+  if (videoState.active) {
+    if (videoState.stream) {
+      videoState.stream.getTracks().forEach(t => t.stop());
+      videoState.stream = null;
+    }
+    document.getElementById('localVideo').srcObject = null;
+    document.getElementById('videoStrip').classList.add('hidden');
+    document.querySelector('.game-layout')?.classList.remove('video-on');
+    videoState.active = false;
+    const btn = document.getElementById('btnVideoToggle');
+    btn.classList.remove('video-on');
+    btn.textContent = '📷';
+  }
+
   voiceState.active = false;
   voiceState.muted = false;
   updateVoiceButton();
-  showToast('Voice chat left');
+  showToast('Voice/Video chat left');
 }
 
 /**
