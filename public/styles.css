@@ -170,6 +170,8 @@ html, body {
   background: linear-gradient(180deg, #0c1222, #162032, #0c1222);
   overflow: hidden;
 }
+
+/* Player bar with turn glow animation */
 .game-topbar { padding: 4px 10px; flex-shrink: 0; }
 .game-players { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
 .gp-item {
@@ -177,23 +179,31 @@ html, body {
   padding: 4px 10px; border-radius: 20px;
   font-size: 0.78rem; font-weight: 600;
   background: rgba(255,255,255,0.05);
-  border: 1.5px solid transparent; transition: all 0.3s;
+  border: 2px solid transparent; transition: all 0.3s;
   font-family: 'Fredoka', sans-serif;
 }
-.gp-item.active { border-color: var(--accent); background: rgba(251,191,36,0.1); box-shadow: 0 0 10px var(--accent-glow); }
+.gp-item.active {
+  border-color: var(--accent);
+  background: rgba(251,191,36,0.15);
+  box-shadow: 0 0 15px var(--accent-glow);
+  animation: turnGlow 1.2s infinite ease-in-out;
+}
+@keyframes turnGlow {
+  0%,100% { box-shadow: 0 0 8px var(--accent-glow); }
+  50% { box-shadow: 0 0 22px rgba(251,191,36,0.5), 0 0 40px rgba(251,191,36,0.2); }
+}
 .gp-item.disconnected { opacity: 0.3; }
 .gp-dot { width: 11px; height: 11px; border-radius: 50%; }
 
-/* ─── VIDEO STRIP (above board, full width, 50/50) ──── */
+/* ─── VIDEO STRIP (above board on mobile, sides on desktop) ──── */
 .video-strip {
   display: flex; width: 100%; flex-shrink: 0;
-  gap: 3px; padding: 3px 4px;
-  background: rgba(0,0,0,0.3);
+  gap: 2px; padding: 0; background: #000;
 }
 .video-panel {
-  flex: 1; height: 100px; border-radius: 8px;
-  overflow: hidden; position: relative;
-  background: #111; border: 1.5px solid rgba(255,255,255,0.1);
+  flex: 1; overflow: hidden; position: relative;
+  background: #0a0a0a;
+  /* Mobile: fills available height dynamically via flex */
 }
 .video-panel video {
   width: 100%; height: 100%; object-fit: cover;
@@ -201,45 +211,64 @@ html, body {
 }
 .video-label {
   position: absolute; bottom: 0; left: 0; right: 0;
-  background: linear-gradient(transparent, rgba(0,0,0,0.7));
-  color: #FFF; font-size: 0.7rem; text-align: center;
-  padding: 10px 4px 3px; font-family: 'Fredoka', sans-serif;
-  letter-spacing: 0.5px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  color: #FFF; font-size: 0.8rem; text-align: center;
+  padding: 14px 6px 5px; font-family: 'Fredoka', sans-serif;
+  letter-spacing: 0.5px; font-weight: 600;
 }
 
-/* Board — centered, shrinks to fit when video is visible */
-.board-wrapper {
+/* Board + video middle area */
+.game-middle {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 2px 4px; min-height: 0; overflow: hidden;
+  min-height: 0; overflow: hidden;
+}
+
+/* Board wrapper */
+.board-wrapper {
+  display: flex; align-items: center; justify-content: center;
+  padding: 2px; flex-shrink: 0;
 }
 .board-frame {
   background: linear-gradient(145deg, #C8A84E, #8B6914, #A07828, #C8A84E);
   border-radius: 12px; padding: 5px;
   box-shadow: 0 8px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-  width: min(98vw, calc(100vh - 140px));
-  height: min(98vw, calc(100vh - 140px));
+  width: min(98vw, calc(100vh - 130px));
+  height: min(98vw, calc(100vh - 130px));
   max-width: 750px; max-height: 750px;
 }
 .ludo-board { width: 100%; height: 100%; display: block; border-radius: 7px; }
 
-/* When video strip is visible, board shrinks to fit */
-.video-strip:not(.hidden) ~ .board-wrapper .board-frame {
-  width: min(98vw, calc(100vh - 250px));
-  height: min(98vw, calc(100vh - 250px));
+/* Board shrinks when video visible */
+.game-layout.video-on .board-frame {
+  width: min(98vw, calc(100vh - 260px));
+  height: min(98vw, calc(100vh - 260px));
 }
 
-/* Controls bar — centered horizontally */
+/* Controls — dice dead center below board */
 .game-controls {
   display: flex; align-items: center; justify-content: center;
-  gap: 12px; padding: 8px 12px; flex-shrink: 0;
-  position: relative;
+  padding: 6px 12px 10px; flex-shrink: 0;
+  position: relative; width: 100%;
 }
 .dice-area { display: flex; align-items: center; gap: 10px; }
-
+.game-message {
+  color: var(--text-secondary); font-size: 0.8rem; font-weight: 500;
+  max-width: 180px; text-align: center; line-height: 1.3;
+  margin-left: 10px;
+}
 .control-btns {
-  display: flex; gap: 6px; position: absolute; right: 10px;
+  display: flex; gap: 6px;
+  position: absolute; right: 10px;
 }
-.dice-area { display: flex; align-items: center; gap: 10px; }
+
+.btn-chat-toggle, .btn-voice-toggle, .btn-video-toggle {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--bg-glass); border: 1.5px solid var(--border);
+  font-size: 0.95rem; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; transition: all 0.2s;
+}
+
+/* Dice styles */
 .dice-box {
   transition: transform 0.1s; cursor: pointer;
   width: 52px; height: 52px;
@@ -260,18 +289,6 @@ html, body {
 .btn-roll:hover:not(:disabled) { transform: translateY(-1px); }
 .btn-roll:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-roll:active:not(:disabled) { transform: scale(0.96); }
-
-.game-message {
-  color: var(--text-secondary); font-size: 0.82rem; font-weight: 500;
-  max-width: 200px; text-align: center; line-height: 1.3;
-}
-
-.btn-chat-toggle, .btn-voice-toggle, .btn-video-toggle {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--bg-glass); border: 1.5px solid var(--border);
-  font-size: 0.95rem; cursor: pointer; display: flex;
-  align-items: center; justify-content: center; transition: all 0.2s;
-}
 .btn-voice-toggle.voice-on {
   background: rgba(34, 197, 94, 0.2); border-color: #22c55e;
   box-shadow: 0 0 10px rgba(34, 197, 94, 0.3);
@@ -366,7 +383,23 @@ html, body {
   background: rgba(34, 197, 94, 0.2); border-color: #22c55e;
 }
 
-/* ─── MOBILE ───────────────────────────────────────────── */
+/* ─── MOBILE (default) — video on top, fills remaining ── */
+@media (max-width: 900px) {
+  .video-strip {
+    /* Video fills the remaining space above board on mobile */
+    flex: 1; min-height: 80px;
+  }
+  .game-layout.video-on .board-frame {
+    width: min(100vw - 4px, calc(100vh - 260px));
+    height: min(100vw - 4px, calc(100vh - 260px));
+  }
+  .board-frame {
+    width: min(100vw - 4px, calc(100vh - 130px));
+    height: min(100vw - 4px, calc(100vh - 130px));
+    padding: 3px; border-radius: 8px;
+  }
+}
+
 @media (max-width: 600px) {
   .welcome-card { padding: 28px 22px; gap: 18px; }
   .logo-title { font-size: 2.2rem; }
@@ -376,23 +409,37 @@ html, body {
   .player-slots { grid-template-columns: 1fr; }
   .game-topbar { padding: 2px 6px; }
   .gp-item { padding: 3px 7px; font-size: 0.7rem; }
-  .game-controls { gap: 8px; padding: 6px 8px; }
-  .game-message { font-size: 0.72rem; max-width: 130px; }
+  .game-controls { gap: 6px; padding: 4px 8px 8px; }
+  .game-message { font-size: 0.7rem; max-width: 110px; }
   .btn-roll { padding: 8px 16px; font-size: 0.84rem; }
   .dice-box { width: 44px; height: 44px; }
-  .board-frame {
-    padding: 3px; border-radius: 8px;
-    width: min(100vw - 4px, calc(100vh - 130px));
-    height: min(100vw - 4px, calc(100vh - 130px));
-  }
-  .video-strip:not(.hidden) ~ .board-wrapper .board-frame {
-    width: min(100vw - 4px, calc(100vh - 240px));
-    height: min(100vw - 4px, calc(100vh - 240px));
-  }
-  .video-panel { height: 80px; }
   .control-btns { position: static; }
   .chat-panel { width: calc(100vw - 20px); right: 10px; }
 }
+
+/* ─── DESKTOP (wide) — video on LEFT + RIGHT of board ── */
+@media (min-width: 901px) {
+  .game-layout.video-on .game-middle {
+    flex-direction: row;
+  }
+  .game-layout.video-on .video-strip {
+    flex-direction: column;
+    width: auto; height: 100%;
+    min-width: 180px; max-width: 260px;
+    flex: 1;
+  }
+  .game-layout.video-on .video-panel {
+    flex: 1;
+  }
+  .game-layout.video-on .board-wrapper {
+    flex-shrink: 0;
+  }
+  .game-layout.video-on .board-frame {
+    width: min(calc(100vw - 400px), calc(100vh - 130px));
+    height: min(calc(100vw - 400px), calc(100vh - 130px));
+  }
+}
+
 @media (max-height: 500px) and (orientation: landscape) {
   .game-layout { flex-direction: row; }
   .game-topbar { flex-direction: column; padding: 4px; width: auto; }

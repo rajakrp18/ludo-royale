@@ -624,7 +624,7 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
   group.appendChild(animGroup);
 
   let step = 0;
-  const STEP_DELAY = 200; // ms per cell — visible step-by-step movement
+  const STEP_DELAY = 280; // ms per cell — clearly visible step-by-step
 
   function nextStep() {
     if (step >= path.length) {
@@ -835,6 +835,7 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
 
 socket.on('gameOver', ({ winner, winnerName, winnerColor }) => {
   SFX.victory();
+  clearSession(); // Game ended, no need to rejoin
   showScreen('winner');
   document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
   document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
@@ -1013,6 +1014,7 @@ document.getElementById('btnVideoToggle').addEventListener('click', async () => 
     }
     document.getElementById('localVideo').srcObject = null;
     strip.classList.add('hidden');
+    document.querySelector('.game-layout')?.classList.remove('video-on');
     videoState.active = false;
     btn.classList.remove('video-on');
     btn.textContent = '📷';
@@ -1036,6 +1038,7 @@ document.getElementById('btnVideoToggle').addEventListener('click', async () => 
 
     // Show the full strip
     strip.classList.remove('hidden');
+    document.querySelector('.game-layout')?.classList.add('video-on');
     videoState.active = true;
     btn.classList.add('video-on');
     btn.textContent = '📹';
@@ -1434,6 +1437,7 @@ function createPeerConnection(peerId, peerName) {
         document.getElementById('videoRemoteName1').textContent = peerName;
         // Show strip if not already visible
         document.getElementById('videoStrip').classList.remove('hidden');
+        document.querySelector('.game-layout')?.classList.add('video-on');
       }
       showToast(`${peerName} shared their camera`);
     }
@@ -1686,7 +1690,7 @@ socket.on('iceCandidate', async ({ fromId, candidate }) => {
 
 function saveSession() {
   try {
-    sessionStorage.setItem('ludoSession', JSON.stringify({
+    localStorage.setItem('ludoSession', JSON.stringify({
       roomCode: GS.roomCode,
       playerName: GS.myName,
       playerIndex: GS.myIndex,
@@ -1696,15 +1700,15 @@ function saveSession() {
 }
 
 function clearSession() {
-  try { sessionStorage.removeItem('ludoSession'); } catch (e) {}
+  try { localStorage.removeItem('ludoSession'); } catch (e) {}
 }
 
 function loadSession() {
   try {
-    const data = sessionStorage.getItem('ludoSession');
+    const data = localStorage.getItem('ludoSession');
     if (!data) return null;
     const session = JSON.parse(data);
-    // Only valid for 5 minutes
+    // Valid for 5 minutes (matches server room timeout)
     if (Date.now() - session.timestamp > 5 * 60 * 1000) {
       clearSession();
       return null;

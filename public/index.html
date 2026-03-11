@@ -116,21 +116,23 @@
         <div class="game-players" id="gamePlayers"></div>
       </div>
 
-      <!-- Video strip — full width above board, 50/50 split -->
-      <div class="video-strip hidden" id="videoStrip">
-        <div class="video-panel" id="videoSelf">
-          <video id="localVideo" autoplay muted playsinline></video>
-          <span class="video-label" id="videoSelfName">You</span>
+      <!-- Middle area: video + board (side-by-side on desktop, stacked on mobile) -->
+      <div class="game-middle">
+        <div class="video-strip hidden" id="videoStrip">
+          <div class="video-panel" id="videoSelf">
+            <video id="localVideo" autoplay muted playsinline></video>
+            <span class="video-label" id="videoSelfName">You</span>
+          </div>
+          <div class="video-panel" id="videoRemote1">
+            <video id="remoteVideo1" autoplay playsinline></video>
+            <span class="video-label" id="videoRemoteName1">Opponent</span>
+          </div>
         </div>
-        <div class="video-panel" id="videoRemote1">
-          <video id="remoteVideo1" autoplay playsinline></video>
-          <span class="video-label" id="videoRemoteName1">Opponent</span>
-        </div>
-      </div>
 
-      <div class="board-wrapper">
-        <div class="board-frame">
-          <svg id="ludoBoard" viewBox="0 0 615 615" class="ludo-board"></svg>
+        <div class="board-wrapper">
+          <div class="board-frame">
+            <svg id="ludoBoard" viewBox="0 0 615 615" class="ludo-board"></svg>
+          </div>
         </div>
       </div>
 
