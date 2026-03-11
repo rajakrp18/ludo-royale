@@ -452,6 +452,9 @@ function renderAllTokens() {
     if (!color) continue;
 
     for (let ti = 0; ti < GS.tokens[pi].length; ti++) {
+      // Skip rendering the token if it's currently being animated
+      if (GS.animatingToken && GS.animatingToken.pi === pi && GS.animatingToken.ti === ti) continue;
+
       const tk = GS.tokens[pi][ti];
       let [cx, cy] = getTokenPos(color, ti, tk);
 
@@ -666,7 +669,28 @@ const GS = {
   myIndex: -1, myColor: null, myName: '', roomCode: '', isHost: false,
   players: [], tokens: null, currentTurn: -1, diceValue: null,
   validMoveTokens: [], rolling: false, isLocalGame: false,
+  animatingToken: null, // { pi, ti }
 };
+
+// ─── ACTION QUEUE (Prevents race conditions between server events and UI animations) ───
+const actionQueue = [];
+let queueTimer = null;
+
+function queueAction(action) {
+  actionQueue.push(action);
+  if (!queueTimer) {
+    queueTimer = setInterval(() => {
+      // Only process next action if no animations or rolls are currently happening
+      if (!animating && !GS.rolling && actionQueue.length > 0) {
+        const nextAction = actionQueue.shift();
+        nextAction();
+      } else if (actionQueue.length === 0) {
+        clearInterval(queueTimer);
+        queueTimer = null;
+      }
+    }, 50);
+  }
+}
 
 // ─── Token click handler (critical fix) ────────────────
 function handleTokenClick(tokenId) {
@@ -749,108 +773,123 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
 });
 
 socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }) => {
-  // Save old state BEFORE updating for animation path computation
-  const oldTokens = GS.tokens ? JSON.parse(JSON.stringify(GS.tokens)) : null;
-  const playerColor = GS.players[playerIndex]?.color;
+  queueAction(() => {
+    // Save old state BEFORE updating for animation path computation
+    const oldTokens = GS.tokens ? JSON.parse(JSON.stringify(GS.tokens)) : null;
+    const playerColor = GS.players[playerIndex]?.color;
 
-  // Compute path for step-by-step animation
-  let path = [];
-  if (oldTokens && playerColor && move) {
-    try {
-      path = computeMovePath(playerColor, playerIndex, tokenId, oldTokens, gs.tokens, move);
-    } catch (e) {
-      console.warn('[ANIM] Path computation failed:', e);
-      path = [];
+    // Compute path for step-by-step animation
+    let path = [];
+    if (oldTokens && playerColor && move) {
+      try {
+        path = computeMovePath(playerColor, playerIndex, tokenId, oldTokens, gs.tokens, move);
+      } catch (e) {
+        console.warn('[ANIM] Path computation failed:', e);
+        path = [];
+      }
     }
-  }
 
-  // Play sound based on move type
-  if (captured) {
-    SFX.capture();
-    const capName = GS.players[captured.playerIndex]?.name || 'Player';
-    showToast(`Captured ${capName}'s token!`);
-  } else if (move && move.type === 'finish') {
-    SFX.finish();
-  } else if (move && move.type === 'enter') {
-    SFX.pawnEnter();
-  }
+    // Play sound based on move type
+    if (captured) {
+      SFX.capture();
+      const capName = GS.players[captured.playerIndex]?.name || 'Player';
+      showToast(`Captured ${capName}'s token!`);
+    } else if (move && move.type === 'finish') {
+      SFX.finish();
+    } else if (move && move.type === 'enter') {
+      SFX.pawnEnter();
+    }
 
-  // Animate if we have a path, otherwise instant update
-  if (path.length > 1) {
-    // Hide the moving token during animation by rendering without it
-    animatePawnSteps(playerColor, playerIndex, tokenId, path, () => {
+    // Animate if we have a path, otherwise instant update
+    if (path.length > 1) {
+      GS.animatingToken = { pi: playerIndex, ti: tokenId };
+      GS.tokens = gs.tokens;
+      GS.validMoveTokens = [];
+      renderAllTokens(); // Redraws without the moving token
+
+      // Hide the moving token during animation by rendering without it
+      animatePawnSteps(playerColor, playerIndex, tokenId, path, () => {
+        GS.animatingToken = null;
+        if (!captured && move && move.type !== 'finish' && move.type !== 'enter') {
+          SFX.pawnMove();
+        }
+        renderAllTokens(); // Ensure piece snaps to final spot
+      });
+    } else {
+      if (!captured && move && move.type !== 'finish' && move.type !== 'enter') {
+        SFX.pawnMove();
+      }
       GS.tokens = gs.tokens;
       GS.validMoveTokens = [];
       renderAllTokens();
-    });
-  } else {
-    if (!captured && move && move.type !== 'finish' && move.type !== 'enter') {
-      SFX.pawnMove();
     }
-    GS.tokens = gs.tokens;
-    GS.validMoveTokens = [];
-    renderAllTokens();
-  }
+  });
 });
 
 socket.on('extraTurn', ({ playerIndex, reason }) => {
-  GS.diceValue = null;
-  GS.validMoveTokens = [];
-  GS.rolling = false;
-  updateDice(null);
-  SFX.extraTurn();
+  queueAction(() => {
+    GS.diceValue = null;
+    GS.validMoveTokens = [];
+    GS.rolling = false;
+    updateDice(null);
+    SFX.extraTurn();
 
-  if (playerIndex === GS.myIndex || GS.isLocalGame) {
-    setMsg(`Bonus turn! Roll again.`);
-    enableDice();
-  } else {
-    const name = GS.players[playerIndex]?.name || 'Player';
-    setMsg(`${name} gets bonus turn!`);
-  }
-  renderAllTokens();
+    if (playerIndex === GS.myIndex || GS.isLocalGame) {
+      setMsg(`Bonus turn! Roll again.`);
+      enableDice();
+    } else {
+      const name = GS.players[playerIndex]?.name || 'Player';
+      setMsg(`${name} gets bonus turn!`);
+    }
+    renderAllTokens();
+  });
 });
 
 socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
-  GS.currentTurn = currentTurn;
-  GS.tokens = gs.tokens;
-  GS.diceValue = null;
-  GS.validMoveTokens = [];
-  GS.rolling = false;
+  queueAction(() => {
+    GS.currentTurn = currentTurn;
+    GS.tokens = gs.tokens;
+    GS.diceValue = null;
+    GS.validMoveTokens = [];
+    GS.rolling = false;
 
-  updateGamePlayers();
-  updateDice(null);
-  renderAllTokens();
+    updateGamePlayers();
+    updateDice(null);
+    renderAllTokens();
 
-  if (currentTurn === GS.myIndex || GS.isLocalGame) {
-    // YOUR TURN — prominent notification
-    SFX.yourTurn();
-    const turnColor = GS.players[currentTurn]?.color || '';
-    const colorName = turnColor.charAt(0).toUpperCase() + turnColor.slice(1);
-    setMsg(GS.isLocalGame ? `${colorName}'s turn! Roll the dice.` : `YOUR TURN! Roll the dice.`);
-    enableDice();
-    // Flash the controls area
-    const ctrl = document.querySelector('.game-controls');
-    if (ctrl) {
-      ctrl.style.transition = 'background 0.3s';
-      ctrl.style.background = 'rgba(251,191,36,0.15)';
-      setTimeout(() => { ctrl.style.background = ''; }, 1500);
+    if (currentTurn === GS.myIndex || GS.isLocalGame) {
+      // YOUR TURN — prominent notification
+      SFX.yourTurn();
+      const turnColor = GS.players[currentTurn]?.color || '';
+      const colorName = turnColor.charAt(0).toUpperCase() + turnColor.slice(1);
+      setMsg(GS.isLocalGame ? `${colorName}'s turn! Roll the dice.` : `YOUR TURN! Roll the dice.`);
+      enableDice();
+      // Flash the controls area
+      const ctrl = document.querySelector('.game-controls');
+      if (ctrl) {
+        ctrl.style.transition = 'background 0.3s';
+        ctrl.style.background = 'rgba(251,191,36,0.15)';
+        setTimeout(() => { ctrl.style.background = ''; }, 1500);
+      }
+    } else {
+      SFX.turnChange();
+      const p = GS.players[currentTurn];
+      const name = p?.name || 'Player';
+      setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
+      disableDice();
     }
-  } else {
-    SFX.turnChange();
-    const p = GS.players[currentTurn];
-    const name = p?.name || 'Player';
-    setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
-    disableDice();
-  }
+  });
 });
 
 socket.on('gameOver', ({ winner, winnerName, winnerColor }) => {
-  SFX.victory();
-  clearSession(); // Game ended, no need to rejoin
-  showScreen('winner');
-  document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
-  document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
-  startConfetti();
+  queueAction(() => {
+    SFX.victory();
+    clearSession(); // Game ended, no need to rejoin
+    showScreen('winner');
+    document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
+    document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
+    startConfetti();
+  });
 });
 
 socket.on('chatMessage', ({ name, color, message }) => {
