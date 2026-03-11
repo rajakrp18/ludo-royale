@@ -241,6 +241,17 @@ function renderBoard(svg) {
       svg.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 13, fill: '#FFF', stroke: col.dk, 'stroke-width': 1.5 }));
       svg.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 8, fill: col.bg, opacity: 0.3 }));
     }
+
+    // Player name text in the corner
+    const nameText = el('text', {
+      id: `playerName-${color}`,
+      x: bx + sz / 2, y: by + sz / 2 - 20,
+      'text-anchor': 'middle', 'dominant-baseline': 'middle',
+      'font-size': 14, 'font-weight': 'bold', 'font-family': 'Fredoka, sans-serif',
+      fill: '#FFFFFF',
+      style: 'text-shadow: 1px 1px 3px rgba(0,0,0,0.6); pointer-events: none;'
+    });
+    svg.appendChild(nameText);
   }
 
   // ─── PATH CELLS ────────────────────────────────────────
@@ -1051,6 +1062,9 @@ document.getElementById('btnVideoToggle').addEventListener('click', async () => 
           pc.addTrack(track, videoState.stream);
         });
       }
+    } else {
+      voiceState.active = true;
+      socket.emit('voiceReady');
     }
   } catch (err) {
     console.error('[VIDEO] Camera access denied:', err);
@@ -1183,7 +1197,21 @@ function initGameScreen() {
 function updateGamePlayers() {
   const c = document.getElementById('gamePlayers');
   c.innerHTML = '';
+
+  PLAYER_COLORS.forEach(color => {
+    const txt = document.getElementById(`playerName-${color}`);
+    if (txt) txt.textContent = '';
+  });
+
   GS.players.forEach((p, i) => {
+    if (p.color) {
+      const boardText = document.getElementById(`playerName-${p.color}`);
+      if (boardText) {
+        boardText.textContent = p.name;
+        boardText.style.opacity = p.connected === false ? '0.5' : '1';
+      }
+    }
+
     const d = document.createElement('div');
     d.className = `gp-item ${i === GS.currentTurn ? 'active' : ''} ${p.connected === false ? 'disconnected' : ''}`;
     const dot = document.createElement('span');
@@ -1408,6 +1436,35 @@ function createPeerConnection(peerId, peerName) {
       pc.addTrack(track, voiceState.localStream);
     });
   }
+
+  // Add our local video tracks to this connection
+  if (videoState.stream) {
+    videoState.stream.getTracks().forEach(track => {
+      pc.addTrack(track, videoState.stream);
+    });
+  }
+
+  let isNegotiating = false;
+  pc.onsignalingstatechange = () => {
+    isNegotiating = (pc.signalingState !== 'stable');
+  };
+
+  pc.onnegotiationneeded = async () => {
+    if (isNegotiating) return;
+    isNegotiating = true;
+    try {
+      const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+      await pc.setLocalDescription(offer);
+      socket.emit('voiceOffer', {
+        targetId: peerId,
+        offer: pc.localDescription,
+      });
+    } catch (err) {
+      console.error('[VOICE] Negotiation failed:', err);
+    } finally {
+      isNegotiating = false;
+    }
+  };
 
   // When we receive audio from the remote peer
   pc.ontrack = (event) => {
