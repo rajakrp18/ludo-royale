@@ -172,8 +172,17 @@ html, body {
 }
 
 /* Player bar with turn glow animation */
-.game-topbar { padding: 4px 10px; flex-shrink: 0; }
-.game-players { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; }
+.game-topbar { padding: 4px 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.game-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.btn-action {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--bg-glass); border: 1.5px solid var(--border);
+  color: var(--text-primary); font-size: 1rem; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.btn-action:hover { background: rgba(255,255,255,0.15); transform: translateY(-1px); }
+.game-players { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; flex: 1; }
 .gp-item {
   display: flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 20px;

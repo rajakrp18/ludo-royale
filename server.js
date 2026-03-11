@@ -1151,10 +1151,16 @@ io.on('connection', (socket) => {
     const room = rooms[playerInfo.roomCode];
     if (!room) return;
 
-    // Tell this player about all other connected players' socket IDs
+    // Track voice ready state on this player
+    const player = room.players[playerInfo.playerIndex];
+    if (player) {
+      player.voiceReady = true;
+    }
+
+    // Tell this player about all other connected players' socket IDs who are ALSO voiceReady
     // so they can initiate WebRTC connections
     const otherPlayers = room.players
-      .filter(p => p.id !== socket.id && p.connected)
+      .filter(p => p.id !== socket.id && p.connected && p.voiceReady)
       .map(p => ({ id: p.id, playerIndex: room.players.indexOf(p), name: p.name }));
 
     socket.emit('voicePeers', { peers: otherPlayers });

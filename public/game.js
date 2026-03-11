@@ -1375,6 +1375,9 @@ document.getElementById('btnRematch').addEventListener('click', () => {
   socket.emit('rematch', null, (r) => { if (!r?.success) showToast('Failed to rematch.'); });
 });
 document.getElementById('btnNewGame').addEventListener('click', () => { clearSession(); window.location.reload(); });
+document.getElementById('btnRefresh').addEventListener('click', () => window.location.reload());
+document.getElementById('btnBack').addEventListener('click', () => showScreen('lobby'));
+document.getElementById('btnLogout').addEventListener('click', () => { clearSession(); window.location.reload(); });
 
 // ═══════════════════════════════════════════════════════════════
 // 11. VOICE CHAT (WebRTC Peer-to-Peer Audio)
@@ -1684,9 +1687,8 @@ socket.on('voicePeers', ({ peers }) => {
 // A new peer joined voice — they'll send us an offer, or we send one
 socket.on('voiceNewPeer', ({ id, playerIndex, name }) => {
   console.log(`[VOICE] New peer ready: ${name}`);
-  if (voiceState.active) {
-    initiateVoiceConnection(id, name);
-  }
+  // We do not initiate connection here, preventing connection glare.
+  // The new peer will receive our node in voicePeers and initiate to us.
 });
 
 // Received an offer — create answer and send back
