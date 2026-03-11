@@ -1643,11 +1643,11 @@ function toggleMute() {
 function updateVoiceButton() {
   const btn = document.getElementById('btnVoiceToggle');
   btn.classList.remove('voice-on', 'voice-muted');
-  if (voiceState.active && voiceState.muted) {
+  if (voiceState.localStream && voiceState.muted) {
     btn.classList.add('voice-muted');
     btn.textContent = '🔇';
     btn.title = 'Click to unmute';
-  } else if (voiceState.active) {
+  } else if (voiceState.localStream) {
     btn.classList.add('voice-on');
     btn.textContent = '🔊';
     btn.title = 'Click to mute (long-press to leave voice)';
@@ -1672,7 +1672,7 @@ voiceBtn.addEventListener('mouseup', () => {
     clearTimeout(voicePressTimer);
     voicePressTimer = null;
     // Short click
-    if (!voiceState.active) startVoice();
+    if (!voiceState.localStream) startVoice();
     else toggleMute();
   }
 });
@@ -1693,7 +1693,7 @@ voiceBtn.addEventListener('touchend', (e) => {
   if (voicePressTimer !== null) {
     clearTimeout(voicePressTimer);
     voicePressTimer = null;
-    if (!voiceState.active) startVoice();
+    if (!voiceState.localStream) startVoice();
     else toggleMute();
   }
 });
