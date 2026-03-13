@@ -1892,22 +1892,37 @@ function checkAutoJoin() {
 
   if (roomCode && roomCode.length >= 4) {
     console.log(`[AUTO-JOIN] Room code from URL: ${roomCode}`);
-    document.getElementById('btnCreateRoom').style.display = 'none';
-    document.getElementById('btnShowJoin').style.display = 'none';
-    document.getElementById('btnShowBot').style.display = 'none';
-    document.getElementById('btnShowLocal').style.display = 'none';
+    const code = roomCode.toUpperCase();
 
-    const joinSection = document.getElementById('joinSection');
-    joinSection.classList.remove('hidden');
-    document.getElementById('roomCodeInput').value = roomCode.toUpperCase();
-    document.getElementById('roomCodeInput').readOnly = true;
-    document.getElementById('roomCodeInput').style.opacity = '0.7';
-    document.getElementById('btnJoinRoom').innerHTML = '<span class="btn-icon">🎮</span> Join Game';
-    document.querySelector('.logo-subtitle').textContent = "You've been invited to play!";
-
-    const nameInput = document.getElementById('playerName');
-    nameInput.placeholder = 'Your name to join...';
-    nameInput.focus();
+    // Auto-join directly without waiting for a button click
+    SFX.init();
+    socket.emit('joinRoom', { roomCode: code, playerName: '' }, (r) => {
+      if (r.success) {
+        GS.myIndex = r.playerIndex; GS.myColor = r.color;
+        GS.roomCode = r.roomCode; GS.players = r.players;
+        GS.myName = r.players[r.playerIndex].name;
+        document.getElementById('lobbyRoomCode').textContent = r.roomCode;
+        updateLobbyPlayers(r.players);
+        showScreen('lobby');
+        document.getElementById('lobbyStatus').textContent = 'Waiting for host to start...';
+        saveSession();
+      } else {
+        showError(r.error || 'Failed to auto-join. Room might be full or active.');
+        // Fall back to showing the manual join screen
+        document.getElementById('btnCreateRoom').style.display = 'none';
+        document.getElementById('btnShowJoin').style.display = 'none';
+        document.getElementById('btnShowBot').style.display = 'none';
+        document.getElementById('btnShowLocal').style.display = 'none';
+        
+        const joinSection = document.getElementById('joinSection');
+        joinSection.classList.remove('hidden');
+        document.getElementById('roomCodeInput').value = code;
+        document.getElementById('roomCodeInput').readOnly = true;
+        document.getElementById('roomCodeInput').style.opacity = '0.7';
+        document.getElementById('btnJoinRoom').innerHTML = '<span class="btn-icon">🎮</span> Join Game';
+        document.querySelector('.logo-subtitle').textContent = "You've been invited to play!";
+      }
+    });
 
     window.history.replaceState({}, '', window.location.pathname);
   }

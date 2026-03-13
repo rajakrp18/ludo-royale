@@ -766,24 +766,35 @@ io.on('connection', (socket) => {
     }
 
     const playerIndex = room.players.length;
+    let finalName = playerName ? playerName.trim() : '';
+    
+    if (!finalName) {
+      if (playerIndex === 1) {
+        finalName = 'Anjana ji';
+      } else {
+        const colorName = PLAYER_COLORS[playerIndex];
+        finalName = colorName ? colorName.charAt(0).toUpperCase() + colorName.slice(1) : `Player ${playerIndex + 1}`;
+      }
+    }
+
     room.players.push({
       id: socket.id,
-      name: playerName,
+      name: finalName,
       color: PLAYER_COLORS[playerIndex],
       connected: true,
     });
 
-    players[socket.id] = { roomCode: code, playerIndex, name: playerName };
+    players[socket.id] = { roomCode: code, playerIndex, name: finalName };
     socket.join(code);
 
-    console.log(`[JOIN] ${playerName} joined ${code} as ${PLAYER_COLORS[playerIndex]}`);
+    console.log(`[JOIN] ${finalName} joined ${code} as ${PLAYER_COLORS[playerIndex]}`);
 
     // Notify everyone in room
     const playerList = room.players.map(p => ({
       name: p.name, color: p.color, connected: p.connected,
     }));
 
-    io.to(code).emit('playerJoined', { players: playerList, newPlayer: playerName });
+    io.to(code).emit('playerJoined', { players: playerList, newPlayer: finalName });
 
     callback({
       success: true,
