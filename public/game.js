@@ -53,7 +53,7 @@ const SFX = {
     this.init();
     for (let i = 0; i < 8; i++) {
       setTimeout(() => {
-        this.tone(200 + Math.random() * 400, 0.04, 'square', 0.08);
+        this.tone(200 + Math.random() * 400, 0.04, 'triangle', 0.08);
       }, i * 60);
     }
   },
@@ -63,10 +63,10 @@ const SFX = {
     this.init();
     this.tone(150, 0.12, 'triangle', 0.2);
     if (value === 6) {
-      // Six! Celebration jingle
-      setTimeout(() => this.tone(523, 0.1, 'square', 0.15), 100);
-      setTimeout(() => this.tone(659, 0.1, 'square', 0.15), 200);
-      setTimeout(() => this.tone(784, 0.15, 'square', 0.18), 300);
+      // Six! Celebration jingle (softer synth)
+      setTimeout(() => this.tone(523, 0.1, 'sine', 0.15), 100);
+      setTimeout(() => this.tone(659, 0.1, 'sine', 0.15), 200);
+      setTimeout(() => this.tone(784, 0.15, 'sine', 0.18), 300);
     }
   },
 
@@ -80,18 +80,18 @@ const SFX = {
   /** Pawn enters the board */
   pawnEnter() {
     this.init();
-    this.tone(330, 0.08, 'square', 0.12);
-    setTimeout(() => this.tone(440, 0.08, 'square', 0.12), 80);
-    setTimeout(() => this.tone(550, 0.1, 'square', 0.14), 160);
+    this.tone(330, 0.08, 'triangle', 0.12);
+    setTimeout(() => this.tone(440, 0.08, 'triangle', 0.12), 80);
+    setTimeout(() => this.tone(550, 0.1, 'triangle', 0.14), 160);
   },
 
-  /** Capture opponent — dramatic */
+  /** Capture opponent — dramatic but not harsh */
   capture() {
     this.init();
-    this.tone(180, 0.15, 'sawtooth', 0.12);
-    setTimeout(() => this.tone(120, 0.2, 'sawtooth', 0.1), 100);
-    setTimeout(() => this.tone(300, 0.1, 'square', 0.15), 250);
-    setTimeout(() => this.tone(400, 0.1, 'square', 0.15), 330);
+    this.tone(180, 0.15, 'triangle', 0.15);
+    setTimeout(() => this.tone(120, 0.2, 'triangle', 0.15), 100);
+    setTimeout(() => this.tone(300, 0.1, 'sine', 0.15), 250);
+    setTimeout(() => this.tone(400, 0.1, 'sine', 0.15), 330);
   },
 
   /** Token reaches home (finish) */
@@ -111,16 +111,16 @@ const SFX = {
   /** YOUR TURN — attention-grabbing notification */
   yourTurn() {
     this.init();
-    this.tone(440, 0.12, 'square', 0.15);
-    setTimeout(() => this.tone(554, 0.12, 'square', 0.15), 130);
-    setTimeout(() => this.tone(659, 0.15, 'square', 0.18), 260);
+    this.tone(440, 0.12, 'sine', 0.15);
+    setTimeout(() => this.tone(554, 0.12, 'sine', 0.15), 130);
+    setTimeout(() => this.tone(659, 0.15, 'sine', 0.18), 260);
   },
 
   /** Extra turn notification */
   extraTurn() {
     this.init();
-    this.tone(500, 0.08, 'square', 0.1);
-    setTimeout(() => this.tone(600, 0.08, 'square', 0.1), 100);
+    this.tone(500, 0.08, 'sine', 0.1);
+    setTimeout(() => this.tone(600, 0.08, 'sine', 0.1), 100);
   },
 
   /** No valid moves */
@@ -135,7 +135,7 @@ const SFX = {
     this.init();
     const notes = [523, 587, 659, 784, 880, 1047];
     notes.forEach((f, i) => {
-      setTimeout(() => this.tone(f, 0.2, 'square', 0.12 + i * 0.01), i * 150);
+      setTimeout(() => this.tone(f, 0.2, 'sine', 0.12 + i * 0.01), i * 150);
     });
     // Final chord
     setTimeout(() => {
@@ -242,12 +242,13 @@ function renderBoard(svg) {
       svg.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 8, fill: col.bg, opacity: 0.3 }));
     }
 
-    // Player name text in the corner
+    // Player name text in the top-left corner of the home base
+    // Use the base (bx, by) + a small padding
     const nameText = el('text', {
       id: `playerName-${color}`,
-      x: bx + sz / 2, y: by + sz / 2 - 20,
-      'text-anchor': 'middle', 'dominant-baseline': 'middle',
-      'font-size': 14, 'font-weight': 'bold', 'font-family': 'Fredoka, sans-serif',
+      x: bx + 12, y: by + 20,
+      'text-anchor': 'start', 'dominant-baseline': 'middle',
+      'font-size': 16, 'font-weight': 'bold', 'font-family': 'Fredoka, sans-serif',
       fill: '#FFFFFF',
       style: 'text-shadow: 1px 1px 3px rgba(0,0,0,0.6); pointer-events: none;'
     });
@@ -638,7 +639,7 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
   group.appendChild(animGroup);
 
   let step = 0;
-  const STEP_DELAY = 280; // ms per cell — clearly visible step-by-step
+  const STEP_DELAY = 140; // ms per cell — sped up from 280ms
 
   function nextStep() {
     if (step >= path.length) {
@@ -651,7 +652,7 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
 
     const [cx, cy] = path[step];
     drawAnimPawn(cx, cy);
-    SFX.tone(300 + step * 20, 0.04, 'sine', 0.06); // Subtle step sound
+    SFX.tone(350 + step * 25, 0.03, 'triangle', 0.04); // Slightly brighter, shorter subtle step sound
     step++;
     setTimeout(nextStep, STEP_DELAY);
   }
