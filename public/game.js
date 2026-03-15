@@ -230,16 +230,18 @@ function renderBoard(svg) {
     const sz = 6 * (CELL + GAP) - GAP;
     const ins = CELL * 0.72;
 
-    svg.appendChild(el('rect', { x: bx, y: by, width: sz, height: sz, fill: col.bg, rx: 6 }));
-    svg.appendChild(el('rect', {
+    const baseGroup = el('g', { id: `base-${color}`, class: 'home-base-group' });
+
+    baseGroup.appendChild(el('rect', { x: bx, y: by, width: sz, height: sz, fill: col.bg, rx: 6 }));
+    baseGroup.appendChild(el('rect', {
       x: bx + ins, y: by + ins, width: sz - ins * 2, height: sz - ins * 2,
       fill: '#FFFFFF', rx: 8, stroke: col.dk, 'stroke-width': 1.5,
     }));
 
     for (const [r, c] of HOME_BASE[color]) {
       const [x, y] = gp(r, c);
-      svg.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 13, fill: '#FFF', stroke: col.dk, 'stroke-width': 1.5 }));
-      svg.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 8, fill: col.bg, opacity: 0.3 }));
+      baseGroup.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 13, fill: '#FFF', stroke: col.dk, 'stroke-width': 1.5 }));
+      baseGroup.appendChild(el('circle', { cx: x + CELL/2, cy: y + CELL/2, r: 8, fill: col.bg, opacity: 0.3 }));
     }
 
     // Player name text in the top-left corner of the home base
@@ -252,7 +254,8 @@ function renderBoard(svg) {
       fill: '#FFFFFF',
       style: 'text-shadow: 1px 1px 3px rgba(0,0,0,0.6); pointer-events: none;'
     });
-    svg.appendChild(nameText);
+    baseGroup.appendChild(nameText);
+    svg.appendChild(baseGroup);
   }
 
   // ─── PATH CELLS ────────────────────────────────────────
@@ -666,6 +669,12 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
 
 const socket = io();
 
+let playerId = localStorage.getItem('ludo_playerId');
+if (!playerId) {
+  playerId = 'user_' + Math.random().toString(36).substr(2, 9);
+  localStorage.setItem('ludo_playerId', playerId);
+}
+
 const GS = {
   myIndex: -1, myColor: null, myName: '', roomCode: '', isHost: false,
   players: [], tokens: null, currentTurn: -1, diceValue: null,
@@ -879,6 +888,14 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
       setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
       disableDice();
     }
+    
+    // Toggle active base illumination
+    document.querySelectorAll('.home-base-group').forEach(group => group.classList.remove('base-active'));
+    const currentPlayer = GS.players[currentTurn];
+    if (currentPlayer && currentPlayer.color) {
+      const activeBase = document.getElementById(`base-${currentPlayer.color}`);
+      if (activeBase) activeBase.classList.add('base-active');
+    }
   });
 });
 
@@ -950,10 +967,13 @@ document.getElementById('btnCreateRoom').addEventListener('click', () => {
   SFX.init(); // Must init on user gesture for browser audio policy
   const name = document.getElementById('playerName').value.trim();
   if (!name) return showError('Enter your name first.');
+  const hostColorEl = document.querySelector('#hostColorPicker .color-opt.selected');
+  const hostColor = hostColorEl ? hostColorEl.dataset.color : 'red';
+
   GS.myName = name;
   GS.isHost = true;
 
-  socket.emit('createRoom', { playerName: name }, (r) => {
+  socket.emit('createRoom', { playerName: name, hostColor, playerId }, (r) => {
     if (r.success) {
       GS.myIndex = r.playerIndex; GS.myColor = r.color;
       GS.roomCode = r.roomCode; GS.players = r.players;
@@ -984,7 +1004,7 @@ document.getElementById('btnJoinRoom').addEventListener('click', () => {
   if (!code || code.length < 4) return showError('Enter a valid room code.');
   GS.myName = name;
 
-  socket.emit('joinRoom', { roomCode: code, playerName: name }, (r) => {
+  socket.emit('joinRoom', { roomCode: code, playerName: name, playerId }, (r) => {
     if (r.success) {
       GS.myIndex = r.playerIndex; GS.myColor = r.color;
       GS.roomCode = r.roomCode; GS.players = r.players;
@@ -1007,6 +1027,14 @@ document.getElementById('btnShowLocal').addEventListener('click', () => {
   section.classList.toggle('hidden');
   document.getElementById('joinSection').classList.add('hidden');
   document.getElementById('botSection').classList.add('hidden');
+});
+
+// Color picker toggle for host play
+document.querySelectorAll('#hostColorPicker .color-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('#hostColorPicker .color-opt').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+  });
 });
 
 // Color picker toggle for local play
@@ -1035,6 +1063,7 @@ document.getElementById('btnStartLocal').addEventListener('click', () => {
   socket.emit('createLocalGame', {
     playerName: name,
     colors: selectedColors,
+    playerId
   }, (r) => {
     if (r.success) {
       GS.myIndex = 0; // Controls all players in local mode
@@ -1142,6 +1171,9 @@ document.getElementById('btnStartBot').addEventListener('click', () => {
   SFX.init();
   const name = document.getElementById('playerName').value.trim();
   if (!name) return showError('Enter your name first.');
+  const hostColorEl = document.querySelector('#hostColorPicker .color-opt.selected');
+  const hostColor = hostColorEl ? hostColorEl.dataset.color : 'red';
+  
   GS.myName = name;
   GS.isHost = true;
 
@@ -1149,6 +1181,8 @@ document.getElementById('btnStartBot').addEventListener('click', () => {
     playerName: name,
     botCount: 1,
     difficulty: selectedDifficulty,
+    hostColor,
+    playerId,
   }, (r) => {
     if (r.success) {
       GS.myIndex = r.playerIndex;
@@ -1274,10 +1308,17 @@ function disableDice() { document.getElementById('btnRollDice').disabled = true;
 function updateDice(value) {
   const svg = document.getElementById('diceSvg');
   svg.innerHTML = '';
-  svg.appendChild(el('rect', { x: 1, y: 1, width: 58, height: 58, rx: 10, fill: '#FFFDF5', stroke: '#8B7355', 'stroke-width': 2 }));
+  
+  const currentPlayer = GS.players && GS.currentTurn >= 0 ? GS.players[GS.currentTurn] : null;
+  const turnColor = currentPlayer ? COLORS[currentPlayer.color]?.bg : '#FFFDF5';
+  const fillCol = turnColor || '#FFFDF5';
+  
+  svg.appendChild(el('rect', { x: 1, y: 1, width: 58, height: 58, rx: 10, fill: fillCol, stroke: '#8B7355', 'stroke-width': 2 }));
+
+  const dotColor = (fillCol !== '#FFFDF5' && fillCol !== '#FFEE58') ? '#FFF' : '#2C1810';
 
   if (!value) {
-    const q = el('text', { x: 30, y: 35, 'text-anchor': 'middle', 'font-size': 26, fill: '#8B7355' });
+    const q = el('text', { x: 30, y: 35, 'text-anchor': 'middle', 'font-size': 26, fill: dotColor });
     q.textContent = '?';
     svg.appendChild(q);
     return;
@@ -1288,7 +1329,7 @@ function updateDice(value) {
     6:[[18,18],[42,18],[18,30],[42,30],[18,42],[42,42]] };
 
   for (const [cx, cy] of (dots[value] || [])) {
-    svg.appendChild(el('circle', { cx, cy, r: 5.5, fill: '#2C1810' }));
+    svg.appendChild(el('circle', { cx, cy, r: 5.5, fill: dotColor }));
   }
 }
 
@@ -1817,6 +1858,7 @@ function saveSession() {
       roomCode: GS.roomCode,
       playerName: GS.myName,
       playerIndex: GS.myIndex,
+      playerId: playerId,
       timestamp: Date.now(),
     }));
   } catch (e) { /* ignore storage errors */ }
@@ -1850,6 +1892,7 @@ function tryRejoin(session) {
   socket.emit('rejoinRoom', {
     roomCode: session.roomCode,
     playerName: session.playerName,
+    playerId: session.playerId || playerId
   }, (r) => {
     if (r.success) {
       GS.myIndex = r.playerIndex;

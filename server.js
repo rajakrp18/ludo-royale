@@ -26,6 +26,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -78,8 +79,34 @@ const SAFE_POSITIONS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 // ─── STATE STORAGE ───────────────────────────────────────────
 
-const rooms = {};   // roomCode → room object
-const players = {}; // socket.id → { roomCode, playerIndex, name }
+const SAVED_GAMES_FILE = path.join(__dirname, 'saved_games.json');
+
+let rooms = {};   // roomCode → room object
+let players = {}; // socket.id → { roomCode, playerIndex, name }
+
+try {
+  if (fs.existsSync(SAVED_GAMES_FILE)) {
+    const data = fs.readFileSync(SAVED_GAMES_FILE, 'utf8');
+    rooms = JSON.parse(data);
+    console.log(`[STATE] Loaded ${Object.keys(rooms).length} rooms from disk.`);
+  }
+} catch (e) {
+  console.error('[STATE] Failed to load saved games:', e);
+}
+
+function persistGames() {
+  try {
+    const activeRooms = {};
+    for (const [code, room] of Object.entries(rooms)) {
+      if (room.status !== 'finished') {
+         activeRooms[code] = room;
+      }
+    }
+    fs.writeFileSync(SAVED_GAMES_FILE, JSON.stringify(activeRooms), 'utf8');
+  } catch (e) {
+    console.error('[STATE] Failed to save games:', e);
+  }
+}
 
 // ─── UTILITY FUNCTIONS ───────────────────────────────────────
 
@@ -582,14 +609,17 @@ io.on('connection', (socket) => {
    * Client sends: { playerName }
    * Server responds: { roomCode, playerIndex, color }
    */
-  socket.on('createRoom', ({ playerName }, callback) => {
+  socket.on('createRoom', ({ playerName, hostColor = 'red', playerId }, callback) => {
     const roomCode = generateRoomCode();
+    const availableColors = PLAYER_COLORS.filter(c => c !== hostColor);
+    
     const room = {
       code: roomCode,
       host: socket.id,
       players: [
-        { id: socket.id, name: playerName, color: PLAYER_COLORS[0], connected: true },
+        { id: socket.id, playerId, name: playerName, color: hostColor, connected: true },
       ],
+      availableColors,
       gameState: null,
       status: 'waiting', // 'waiting' | 'playing' | 'finished'
       maxPlayers: 4,
@@ -601,12 +631,13 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
 
     console.log(`[ROOM CREATED] ${roomCode} by ${playerName}`);
+    persistGames();
 
     callback({
       success: true,
       roomCode,
       playerIndex: 0,
-      color: PLAYER_COLORS[0],
+      color: hostColor,
       players: room.players.map(p => ({ name: p.name, color: p.color, connected: p.connected })),
     });
   });
@@ -616,17 +647,19 @@ io.on('connection', (socket) => {
    * Creates a room with 1 human + 1-3 AI bots, starts immediately.
    * Client sends: { playerName, botCount (1-3), difficulty ('easy'|'medium'|'hard') }
    */
-  socket.on('createBotGame', ({ playerName, botCount = 1, difficulty = 'medium' }, callback) => {
+  socket.on('createBotGame', ({ playerName, botCount = 1, difficulty = 'medium', hostColor = 'red', playerId }, callback) => {
     const roomCode = generateRoomCode();
     const bots = Math.min(Math.max(botCount, 1), 3); // 1-3 bots
     const botNames = ['Captain Bot', 'Sir Ludo', 'Lady Dice', 'Duke Roll'];
+    const availableColors = PLAYER_COLORS.filter(c => c !== hostColor);
 
     const room = {
       code: roomCode,
       host: socket.id,
       players: [
-        { id: socket.id, name: playerName, color: PLAYER_COLORS[0], connected: true, isBot: false },
+        { id: socket.id, playerId, name: playerName, color: hostColor, connected: true, isBot: false },
       ],
+      availableColors,
       gameState: null,
       status: 'waiting',
       maxPlayers: bots + 1,
@@ -639,7 +672,7 @@ io.on('connection', (socket) => {
       room.players.push({
         id: `bot-${roomCode}-${i}`,
         name: botNames[i] || `Bot ${i + 1}`,
-        color: PLAYER_COLORS[i + 1],
+        color: availableColors.shift(),
         connected: true,
         isBot: true,
         difficulty: difficulty,
@@ -651,6 +684,7 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
 
     console.log(`[BOT GAME] ${roomCode} by ${playerName} with ${bots} bot(s) [${difficulty}]`);
+    persistGames();
 
     // Auto-start game immediately
     room.status = 'playing';
@@ -670,7 +704,7 @@ io.on('connection', (socket) => {
       success: true,
       roomCode,
       playerIndex: 0,
-      color: PLAYER_COLORS[0],
+      color: hostColor,
       players: playerList,
     });
 
@@ -688,7 +722,7 @@ io.on('connection', (socket) => {
    * CREATE LOCAL GAME — Multiple players on same device (pass & play).
    * One socket controls all human players. Colors chosen by the user.
    */
-  socket.on('createLocalGame', ({ playerName, colors }, callback) => {
+  socket.on('createLocalGame', ({ playerName, colors, playerId }, callback) => {
     const roomCode = generateRoomCode();
     const colorNames = { red: 'Red', yellow: 'Yellow', green: 'Green', blue: 'Blue' };
 
@@ -697,6 +731,7 @@ io.on('connection', (socket) => {
       host: socket.id,
       players: colors.map((color, i) => ({
         id: socket.id, // All controlled by same socket
+        playerId: i === 0 ? playerId : null,
         name: i === 0 ? playerName : colorNames[color],
         color: color,
         connected: true,
@@ -714,6 +749,7 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
 
     console.log(`[LOCAL GAME] ${roomCode} by ${playerName} with colors ${colors.join(',')}`);
+    persistGames();
 
     // Auto-start
     room.status = 'playing';
@@ -751,7 +787,7 @@ io.on('connection', (socket) => {
    * Client sends: { roomCode, playerName }
    * Server responds: { playerIndex, color, players }
    */
-  socket.on('joinRoom', ({ roomCode, playerName }, callback) => {
+  socket.on('joinRoom', ({ roomCode, playerName, playerId }, callback) => {
     const code = roomCode.toUpperCase().trim();
     const room = rooms[code];
 
@@ -768,26 +804,30 @@ io.on('connection', (socket) => {
     const playerIndex = room.players.length;
     let finalName = playerName ? playerName.trim() : '';
     
+    const assignedColor = room.availableColors.shift();
+
     if (!finalName) {
       if (playerIndex === 1) {
         finalName = 'Anjana ji';
       } else {
-        const colorName = PLAYER_COLORS[playerIndex];
+        const colorName = assignedColor;
         finalName = colorName ? colorName.charAt(0).toUpperCase() + colorName.slice(1) : `Player ${playerIndex + 1}`;
       }
     }
 
     room.players.push({
       id: socket.id,
+      playerId,
       name: finalName,
-      color: PLAYER_COLORS[playerIndex],
+      color: assignedColor,
       connected: true,
     });
 
     players[socket.id] = { roomCode: code, playerIndex, name: finalName };
     socket.join(code);
 
-    console.log(`[JOIN] ${finalName} joined ${code} as ${PLAYER_COLORS[playerIndex]}`);
+    console.log(`[JOIN] ${finalName} joined ${code} as ${assignedColor}`);
+    persistGames();
 
     // Notify everyone in room
     const playerList = room.players.map(p => ({
@@ -924,6 +964,7 @@ io.on('connection', (socket) => {
         });
       }, 1200);
     }
+    persistGames();
 
     callback?.({ success: true, value, validMoves: validMoves.map(m => m.tokenId) });
   });
@@ -968,6 +1009,7 @@ io.on('connection', (socket) => {
         winnerName: room.players[activePlayer].name,
         winnerColor: room.players[activePlayer].color,
       });
+      persistGames();
 
       return callback?.({ success: true });
     }
@@ -997,6 +1039,7 @@ io.on('connection', (socket) => {
         currentTurn: gs.currentTurn, gameState: gs,
       });
     }
+    persistGames();
 
     callback?.({ success: true });
   });
@@ -1056,7 +1099,7 @@ io.on('connection', (socket) => {
    * REJOIN ROOM — Reconnect after accidental disconnect/page refresh.
    * Client sends { roomCode, playerName } and gets back into the same slot.
    */
-  socket.on('rejoinRoom', ({ roomCode, playerName }, callback) => {
+  socket.on('rejoinRoom', ({ roomCode, playerName, playerId }, callback) => {
     const code = roomCode.toUpperCase().trim();
     const room = rooms[code];
 
@@ -1066,7 +1109,7 @@ io.on('connection', (socket) => {
 
     // Find the disconnected player slot matching this name
     const slotIndex = room.players.findIndex(
-      p => p.name === playerName && !p.connected && !p.isBot
+      p => (p.playerId === playerId || p.name === playerName) && !p.connected && !p.isBot
     );
 
     if (slotIndex === -1) {
@@ -1076,6 +1119,7 @@ io.on('connection', (socket) => {
     // Reconnect the player
     const slot = room.players[slotIndex];
     slot.id = socket.id;
+    slot.playerId = playerId;
     slot.connected = true;
 
     // Cancel room destruction timer
@@ -1088,6 +1132,7 @@ io.on('connection', (socket) => {
     socket.join(code);
 
     console.log(`[REJOIN] ${playerName} rejoined ${code} as ${slot.color}`);
+    persistGames();
 
     // Notify everyone
     io.to(code).emit('playerJoined', {

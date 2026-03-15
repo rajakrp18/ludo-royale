@@ -28,6 +28,15 @@
           <label for="playerName">Your Name</label>
           <input type="text" id="playerName" placeholder="Enter your name..." maxlength="15" autocomplete="off">
         </div>
+        <div class="form-group" id="hostColorGroup">
+          <label>Your Color (Host)</label>
+          <div class="color-picker" id="hostColorPicker">
+            <div class="color-opt selected" data-color="red" style="background:#D32F2F;"></div>
+            <div class="color-opt" data-color="yellow" style="background:#F9A825;"></div>
+            <div class="color-opt" data-color="green" style="background:#2E7D32;"></div>
+            <div class="color-opt" data-color="blue" style="background:#1565C0;"></div>
+          </div>
+        </div>
         <div class="welcome-buttons">
           <button class="btn btn-primary" id="btnCreateRoom"><span class="btn-icon">✦</span> Create Room</button>
           <button class="btn btn-secondary" id="btnShowJoin"><span class="btn-icon">→</span> Join Room</button>

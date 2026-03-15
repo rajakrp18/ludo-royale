@@ -457,3 +457,12 @@ html, body {
   .board-frame { width: calc(100vh - 16px); height: calc(100vh - 16px); max-width: none; max-height: none; }
   .game-controls { flex-direction: column; padding: 4px; width: auto; }
 }
+/ *   B a s e   A c t i v e   I l l u m i n a t i o n   * / 
+ . b a s e - a c t i v e   >   r e c t : f i r s t - c h i l d   { 
+     a n i m a t i o n :   b a s e P u l s e G l o w   1 . 5 s   i n f i n i t e   a l t e r n a t e ; 
+ } 
+ @ k e y f r a m e s   b a s e P u l s e G l o w   { 
+     0 %   {   o p a c i t y :   0 . 9 ;   } 
+     1 0 0 %   {   o p a c i t y :   1 ;   f i l t e r :   b r i g h t n e s s ( 1 . 3 ) ;   } 
+ }  
+ 
