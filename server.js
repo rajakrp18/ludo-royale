@@ -32,8 +32,8 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
-  pingTimeout: 60000,
-  pingInterval: 25000,
+  pingTimeout: 120000,
+  pingInterval: 30000,
 });
 
 // ─── SERVE STATIC FILES ──────────────────────────────────────
@@ -80,33 +80,53 @@ const SAFE_POSITIONS = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 // ─── STATE STORAGE ───────────────────────────────────────────
 
 const SAVED_GAMES_FILE = path.join(__dirname, 'saved_games.json');
+const rooms = {};   // roomCode → room object (in-memory)
+const players = {}; // socket.id → { roomCode, playerIndex, name }
 
-let rooms = {};   // roomCode → room object
-let players = {}; // socket.id → { roomCode, playerIndex, name }
-
-try {
-  if (fs.existsSync(SAVED_GAMES_FILE)) {
-    const data = fs.readFileSync(SAVED_GAMES_FILE, 'utf8');
-    rooms = JSON.parse(data);
-    console.log(`[STATE] Loaded ${Object.keys(rooms).length} rooms from disk.`);
-  }
-} catch (e) {
-  console.error('[STATE] Failed to load saved games:', e);
-}
-
+/** Save active games to disk (survives server restart) */
 function persistGames() {
   try {
-    const activeRooms = {};
+    const saveData = {};
     for (const [code, room] of Object.entries(rooms)) {
-      if (room.status !== 'finished') {
-         activeRooms[code] = room;
-      }
+      if (room.status === 'finished') continue;
+      // Strip non-serializable and stale fields
+      const { _destroyTimer, ...cleanRoom } = room;
+      cleanRoom.players = cleanRoom.players.map(p => {
+        const { voiceReady, ...cleanP } = p;
+        return {
+          ...cleanP,
+          id: p.isBot ? p.id : null,        // Socket IDs become stale on restart
+          connected: p.isBot ? true : false, // Humans must reconnect
+        };
+      });
+      saveData[code] = cleanRoom;
     }
-    fs.writeFileSync(SAVED_GAMES_FILE, JSON.stringify(activeRooms), 'utf8');
+    fs.writeFileSync(SAVED_GAMES_FILE, JSON.stringify(saveData), 'utf8');
   } catch (e) {
-    console.error('[STATE] Failed to save games:', e);
+    console.error('[PERSIST] Save failed:', e.message);
   }
 }
+
+/** Load saved games on startup (rooms only, players map rebuilds on reconnect) */
+function loadSavedGames() {
+  try {
+    if (!fs.existsSync(SAVED_GAMES_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(SAVED_GAMES_FILE, 'utf8'));
+    const now = Date.now();
+    let loaded = 0;
+    for (const [code, room] of Object.entries(data)) {
+      // Skip rooms older than 30 minutes
+      if (now - (room.createdAt || 0) > 30 * 60 * 1000) continue;
+      rooms[code] = room;
+      loaded++;
+    }
+    if (loaded > 0) console.log(`[PERSIST] Restored ${loaded} active rooms from disk`);
+  } catch (e) {
+    console.error('[PERSIST] Load failed:', e.message);
+  }
+}
+
+loadSavedGames();
 
 // ─── UTILITY FUNCTIONS ───────────────────────────────────────
 
@@ -232,7 +252,18 @@ function getValidMoves(room, playerIndex, diceValue) {
     }
   });
 
-  return moves;
+  // Deduplicate: if multiple pawns can 'enter' to the same cell, keep only one.
+  // In Ludo, bringing out pawn #0 vs #2 to the same start cell is functionally identical.
+  let hasEnter = false;
+  const dedupMoves = moves.filter(m => {
+    if (m.type === 'enter') {
+      if (hasEnter) return false; // Skip duplicate enters
+      hasEnter = true;
+    }
+    return true;
+  });
+
+  return dedupMoves;
 }
 
 /**
@@ -471,15 +502,8 @@ function playBotTurn(room) {
 
   const difficulty = bot.difficulty || 'medium';
 
-  // ─── ROLL DICE ──────────────────────────────────────────
-  // Opening rule: reduced pool [1,3,6] when all pawns in home
-  const botTokens = gs.tokens[botIndex];
-  const botAllHome = botTokens.every(t => t.state === 'home' || t.state === 'finished');
-  const botNoActive = !botTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
-
-  const value = (botAllHome && botNoActive)
-    ? [1, 3, 6][Math.floor(Math.random() * 3)]
-    : (Math.floor(Math.random() * 6) + 1);
+  // ─── ROLL DICE — standard Ludo: pure random 1-6 ────────
+  const value = Math.floor(Math.random() * 6) + 1;
   gs.diceValue = value;
   gs.rolled = true;
 
@@ -515,16 +539,34 @@ function playBotTurn(room) {
     validMoves: validMoves.map(m => m.tokenId),
   });
 
-  // ─── NO VALID MOVES → auto-skip ────────────────────────
+  // ─── NO VALID MOVES → 3-roll rule or skip ──────────────
   if (validMoves.length === 0) {
-    setTimeout(() => {
-      nextTurn(room);
-      io.to(room.code).emit('turnChanged', {
-        currentTurn: gs.currentTurn, gameState: gs,
+    const btk = gs.tokens[botIndex];
+    const botAllStuck = btk.every(t => t.state === 'home' || t.state === 'finished');
+    const botHasHome = btk.some(t => t.state === 'home');
+    const rollAttempt = gs.rollAttempt || 1;
+
+    if (botAllStuck && botHasHome && rollAttempt < 3) {
+      // Bot gets another roll attempt
+      gs.rollAttempt = rollAttempt + 1;
+      gs.rolled = false;
+      gs.diceValue = null;
+      io.to(room.code).emit('autoReroll', {
+        playerIndex: botIndex, attempt: rollAttempt + 1, previousValue: value,
       });
-    }, 1200);
+      setTimeout(() => playBotTurn(room), 800);
+    } else {
+      gs.rollAttempt = 0;
+      setTimeout(() => {
+        nextTurn(room);
+        io.to(room.code).emit('turnChanged', {
+          currentTurn: gs.currentTurn, gameState: gs,
+        });
+      }, 1200);
+    }
     return;
   }
+  gs.rollAttempt = 0;
 
   // ─── PICK BEST MOVE ────────────────────────────────────
   setTimeout(() => {
@@ -804,15 +846,19 @@ io.on('connection', (socket) => {
     const playerIndex = room.players.length;
     let finalName = playerName ? playerName.trim() : '';
     
+    // Safely get next available color (handles restored rooms where availableColors may be missing)
+    if (!room.availableColors || room.availableColors.length === 0) {
+      const usedColors = room.players.map(p => p.color);
+      room.availableColors = PLAYER_COLORS.filter(c => !usedColors.includes(c));
+    }
     const assignedColor = room.availableColors.shift();
 
+    if (!assignedColor) {
+      return callback({ success: false, error: 'No colors available. Room is full.' });
+    }
+
     if (!finalName) {
-      if (playerIndex === 1) {
-        finalName = 'Anjana ji';
-      } else {
-        const colorName = assignedColor;
-        finalName = colorName ? colorName.charAt(0).toUpperCase() + colorName.slice(1) : `Player ${playerIndex + 1}`;
-      }
+      finalName = assignedColor ? assignedColor.charAt(0).toUpperCase() + assignedColor.slice(1) + ' Player' : `Player ${playerIndex + 1}`;
     }
 
     room.players.push({
@@ -839,7 +885,7 @@ io.on('connection', (socket) => {
     callback({
       success: true,
       playerIndex,
-      color: PLAYER_COLORS[playerIndex],
+      color: assignedColor,
       players: playerList,
       roomCode: code,
     });
@@ -903,18 +949,8 @@ io.on('connection', (socket) => {
       return callback?.({ success: false, error: 'Already rolled this turn.' });
     }
 
-    // Roll the dice (1-6)
-    const playerTokens = gs.tokens[activePlayer];
-    const allInHome = playerTokens.every(t => t.state === 'home' || t.state === 'finished');
-    const noActiveTokens = !playerTokens.some(t => t.state === 'active' || t.state === 'homeColumn');
-
-    let value;
-    if (allInHome && noActiveTokens) {
-      const openingPool = [1, 3, 6];
-      value = openingPool[Math.floor(Math.random() * openingPool.length)];
-    } else {
-      value = Math.floor(Math.random() * 6) + 1;
-    }
+    // Roll the dice — standard Ludo: pure random 1-6, only 6 exits home
+    const value = Math.floor(Math.random() * 6) + 1;
     gs.diceValue = value;
     gs.rolled = true;
 
@@ -954,15 +990,38 @@ io.on('connection', (socket) => {
       validMoves: validMoves.map(m => m.tokenId),
     });
 
-    // If no valid moves, auto-advance turn after brief delay
+    // If no valid moves, check if ALL pawns are in home → 3-roll rule (Ludo King style)
+    // Player gets up to 3 attempts to roll a 6 when stuck with no tokens on board
     if (validMoves.length === 0) {
-      setTimeout(() => {
-        nextTurn(room);
-        io.to(playerInfo.roomCode).emit('turnChanged', {
-          currentTurn: gs.currentTurn,
-          gameState: gs,
+      const playerTokens = gs.tokens[activePlayer];
+      const allStuckInHome = playerTokens.every(t => t.state === 'home' || t.state === 'finished');
+      const hasHomePawns = playerTokens.some(t => t.state === 'home');
+      const rollAttempt = gs.rollAttempt || 1;
+
+      if (allStuckInHome && hasHomePawns && rollAttempt < 3) {
+        // Auto-roll again after showing this roll briefly
+        gs.rollAttempt = rollAttempt + 1;
+        gs.rolled = false; // Allow another roll
+        gs.diceValue = null;
+
+        io.to(playerInfo.roomCode).emit('autoReroll', {
+          playerIndex: activePlayer,
+          attempt: rollAttempt + 1,
+          previousValue: value,
         });
-      }, 1200);
+      } else {
+        // No more attempts — pass turn
+        gs.rollAttempt = 0;
+        setTimeout(() => {
+          nextTurn(room);
+          io.to(playerInfo.roomCode).emit('turnChanged', {
+            currentTurn: gs.currentTurn,
+            gameState: gs,
+          });
+        }, 1200);
+      }
+    } else {
+      gs.rollAttempt = 0; // Reset on successful roll
     }
     persistGames();
 
@@ -1107,10 +1166,11 @@ io.on('connection', (socket) => {
       return callback({ success: false, error: 'Room no longer exists.' });
     }
 
-    // Find the disconnected player slot matching this name
-    const slotIndex = room.players.findIndex(
-      p => (p.playerId === playerId || p.name === playerName) && !p.connected && !p.isBot
-    );
+    // Find the disconnected player slot matching this name or persistent ID
+    const slotIndex = room.players.findIndex(p => {
+      // Prioritize strict playerId matching. Fallback to name if missing.
+      return (!p.isBot) && (p.playerId === playerId || p.name === playerName);
+    });
 
     if (slotIndex === -1) {
       return callback({ success: false, error: 'No matching slot found. Game may have ended.' });

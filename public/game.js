@@ -353,49 +353,57 @@ function renderBoard(svg) {
 function drawPawn(group, cx, cy, color, moveable, tokenId) {
   const col = COLORS[color];
 
-  // Glow ring for moveable pawns
+  // Glow ring for moveable pawns — larger and more visible
   if (moveable) {
-    const glow = el('circle', { cx, cy: cy+2, r: 20, fill: 'none', stroke: '#FFFFFF', 'stroke-width': 2.5, opacity: 0.8 });
-    // Animate glow
-    const anim1 = el('animate', { attributeName: 'r', values: '18;22;18', dur: '0.7s', repeatCount: 'indefinite' });
-    const anim2 = el('animate', { attributeName: 'opacity', values: '0.9;0.3;0.9', dur: '0.7s', repeatCount: 'indefinite' });
+    const glow = el('circle', { cx, cy: cy-2, r: 24, fill: 'none', stroke: '#FFFFFF', 'stroke-width': 3, opacity: 0.8 });
+    const anim1 = el('animate', { attributeName: 'r', values: '22;28;22', dur: '0.8s', repeatCount: 'indefinite' });
+    const anim2 = el('animate', { attributeName: 'opacity', values: '0.9;0.3;0.9', dur: '0.8s', repeatCount: 'indefinite' });
     glow.appendChild(anim1);
     glow.appendChild(anim2);
     group.appendChild(glow);
+
+    // Second inner glow in player color
+    const glow2 = el('circle', { cx, cy: cy-2, r: 18, fill: 'none', stroke: col.bg, 'stroke-width': 1.5, opacity: 0.6 });
+    const anim3 = el('animate', { attributeName: 'opacity', values: '0.6;0.2;0.6', dur: '0.8s', repeatCount: 'indefinite' });
+    glow2.appendChild(anim3);
+    group.appendChild(glow2);
   }
 
-  // Shadow
-  group.appendChild(el('ellipse', { cx: cx+1, cy: cy+10, rx: 11, ry: 5, fill: 'rgba(0,0,0,0.2)' }));
+  // Drop shadow (soft)
+  group.appendChild(el('ellipse', { cx: cx+1, cy: cy+13, rx: 12, ry: 5, fill: 'rgba(0,0,0,0.18)' }));
 
-  // Base (wide bottom)
-  group.appendChild(el('ellipse', { cx, cy: cy+6, rx: 11, ry: 5, fill: col.dk }));
-  group.appendChild(el('ellipse', { cx, cy: cy+5, rx: 11, ry: 5, fill: col.bg }));
+  // Base platform (wide, flat disc)
+  group.appendChild(el('ellipse', { cx, cy: cy+8, rx: 13, ry: 5.5, fill: col.dk }));
+  group.appendChild(el('ellipse', { cx, cy: cy+7, rx: 13, ry: 5.5, fill: col.bg }));
+  // Base rim highlight
+  group.appendChild(el('ellipse', { cx, cy: cy+6, rx: 11, ry: 4, fill: col.lt, opacity: 0.3 }));
 
-  // Body (tapered)
+  // Body — tall tapered column
   group.appendChild(el('path', {
-    d: `M${cx-9},${cy+4} Q${cx-7},${cy-5} ${cx-5},${cy-8} L${cx+5},${cy-8} Q${cx+7},${cy-5} ${cx+9},${cy+4} Z`,
+    d: `M${cx-10},${cy+6} Q${cx-8},${cy-6} ${cx-5},${cy-14} L${cx+5},${cy-14} Q${cx+8},${cy-6} ${cx+10},${cy+6} Z`,
     fill: col.bg, stroke: col.dk, 'stroke-width': 0.8,
   }));
 
-  // Neck ring
-  group.appendChild(el('ellipse', { cx, cy: cy-7, rx: 6, ry: 2.5, fill: col.dk, opacity: 0.5 }));
-
-  // Head (round ball on top)
-  group.appendChild(el('circle', { cx, cy: cy-12, r: 7, fill: col.bg, stroke: col.dk, 'stroke-width': 1 }));
-
-  // Head shine
-  group.appendChild(el('circle', { cx: cx-2, cy: cy-14, r: 2.8, fill: 'rgba(255,255,255,0.55)' }));
-
-  // Body shine
+  // Body gradient shine (left side highlight)
   group.appendChild(el('path', {
-    d: `M${cx-4},${cy+3} Q${cx-3},${cy-4} ${cx-2},${cy-7} L${cx},${cy-7} Q${cx-1},${cy-4} ${cx},${cy+3} Z`,
-    fill: 'rgba(255,255,255,0.2)',
+    d: `M${cx-5},${cy+4} Q${cx-4},${cy-5} ${cx-3},${cy-12} L${cx-1},${cy-12} Q${cx-2},${cy-5} ${cx-1},${cy+4} Z`,
+    fill: 'rgba(255,255,255,0.22)',
   }));
 
-  // CLICK TARGET — invisible large rect covering entire pawn area
-  // This is the fix for the click issue!
+  // Neck ring (collar)
+  group.appendChild(el('ellipse', { cx, cy: cy-13, rx: 6, ry: 2.8, fill: col.dk, opacity: 0.5 }));
+  group.appendChild(el('ellipse', { cx, cy: cy-13.5, rx: 5.5, ry: 2.3, fill: col.lt, opacity: 0.3 }));
+
+  // Head — slightly larger sphere
+  group.appendChild(el('circle', { cx, cy: cy-19, r: 8, fill: col.bg, stroke: col.dk, 'stroke-width': 1 }));
+
+  // Head specular highlight (makes it look 3D)
+  group.appendChild(el('circle', { cx: cx-2.5, cy: cy-22, r: 3.5, fill: 'rgba(255,255,255,0.5)' }));
+  group.appendChild(el('circle', { cx: cx-1, cy: cy-21, r: 1.5, fill: 'rgba(255,255,255,0.8)' }));
+
+  // CLICK TARGET — covers entire pawn area
   const hitArea = el('rect', {
-    x: cx - 16, y: cy - 22, width: 32, height: 38,
+    x: cx - 18, y: cy - 30, width: 36, height: 48,
     fill: 'transparent', cursor: moveable ? 'pointer' : 'default',
     'data-token-id': tokenId, 'data-moveable': moveable ? '1' : '0',
   });
@@ -540,24 +548,19 @@ function computeMovePath(color, playerIndex, tokenId, oldTokens, newTokens, move
     if (oldTk.state === 'active') {
       // Track → Home Column: walk remaining track cells, then into home column
       const startIdx = START_INDEX[color];
-      const oldPos = oldTk.trackPos;
-      // Walk to the last track cell before home entry
-      // The last track cell is the one just before start (going backwards)
-      const lastTrackPos = (startIdx + 51) % 52; // cell before wrapping to start
-      // But wait, we need to find the actual entry point
-      // Walk forward from current pos
-      let pos = oldPos;
-      // First: walk track cells
-      for (let step = 0; step < 52; step++) {
+      let pos = oldTk.trackPos;
+
+      // Walk forward on track until we reach the home entry cell
+      for (let s = 0; s < 52; s++) {
         pos = (pos + 1) % 52;
+        const stepsNow = (pos - startIdx + 52) % 52;
+        if (stepsNow > 50) break; // Past home entry, stop walking track
         const [r, c] = TRACK[pos];
         const [x, y] = gp(r, c);
         path.push([x + CELL/2, y + CELL/2]);
-        // Check if next step would be home column
-        const stepsNow = (pos - startIdx + 52) % 52;
-        if (stepsNow >= 50) break; // reached entry
+        if (stepsNow === 50) break; // This IS the last track cell
       }
-      // Then: walk home column cells
+      // Then: walk into home column cells
       const targetHP = move.homeColPos !== undefined ? move.homeColPos : (HOME_COLUMNS[color].length - 1);
       for (let hp = 0; hp <= targetHP; hp++) {
         if (hp < HOME_COLUMNS[color].length) {
@@ -616,39 +619,49 @@ function animatePawnSteps(color, playerIndex, tokenId, path, callback) {
   const group = document.getElementById('tokenGroup');
   const col = COLORS[color];
 
-  // Create animated pawn group
+  // Safety: auto-unlock after 10 seconds max (prevents permanent lock)
+  const safetyTimeout = setTimeout(() => {
+    animating = false;
+    GS.animatingToken = null;
+    const ag = document.getElementById('animPawn');
+    if (ag) ag.remove();
+    callback?.();
+  }, 10000);
+
   const animGroup = el('g', { id: 'animPawn' });
 
+  // CRITICAL: Draw pawn matching EXACT same shape/offsets as drawPawn()
   function drawAnimPawn(cx, cy) {
     animGroup.innerHTML = '';
     // Shadow
-    animGroup.appendChild(el('ellipse', { cx: cx+1, cy: cy+10, rx: 11, ry: 5, fill: 'rgba(0,0,0,0.2)' }));
+    animGroup.appendChild(el('ellipse', { cx: cx+1, cy: cy+13, rx: 12, ry: 5, fill: 'rgba(0,0,0,0.18)' }));
     // Base
-    animGroup.appendChild(el('ellipse', { cx, cy: cy+6, rx: 11, ry: 5, fill: col.dk }));
-    animGroup.appendChild(el('ellipse', { cx, cy: cy+5, rx: 11, ry: 5, fill: col.bg }));
+    animGroup.appendChild(el('ellipse', { cx, cy: cy+8, rx: 13, ry: 5.5, fill: col.dk }));
+    animGroup.appendChild(el('ellipse', { cx, cy: cy+7, rx: 13, ry: 5.5, fill: col.bg }));
     // Body
     animGroup.appendChild(el('path', {
-      d: `M${cx-9},${cy+4} Q${cx-7},${cy-5} ${cx-5},${cy-8} L${cx+5},${cy-8} Q${cx+7},${cy-5} ${cx+9},${cy+4} Z`,
+      d: `M${cx-10},${cy+6} Q${cx-8},${cy-6} ${cx-5},${cy-14} L${cx+5},${cy-14} Q${cx+8},${cy-6} ${cx+10},${cy+6} Z`,
       fill: col.bg, stroke: col.dk, 'stroke-width': 0.8,
     }));
     // Neck
-    animGroup.appendChild(el('ellipse', { cx, cy: cy-7, rx: 6, ry: 2.5, fill: col.dk, opacity: 0.5 }));
+    animGroup.appendChild(el('ellipse', { cx, cy: cy-13, rx: 6, ry: 2.8, fill: col.dk, opacity: 0.5 }));
     // Head
-    animGroup.appendChild(el('circle', { cx, cy: cy-12, r: 7, fill: col.bg, stroke: col.dk, 'stroke-width': 1 }));
-    // Shine
-    animGroup.appendChild(el('circle', { cx: cx-2, cy: cy-14, r: 2.8, fill: 'rgba(255,255,255,0.55)' }));
+    animGroup.appendChild(el('circle', { cx, cy: cy-19, r: 8, fill: col.bg, stroke: col.dk, 'stroke-width': 1 }));
+    // Head shine
+    animGroup.appendChild(el('circle', { cx: cx-2.5, cy: cy-22, r: 3.5, fill: 'rgba(255,255,255,0.5)' }));
   }
 
   group.appendChild(animGroup);
 
   let step = 0;
-  const STEP_DELAY = 140; // ms per cell — sped up from 280ms
+  const STEP_DELAY = 250; // ms per cell — clearly visible hop
 
   function nextStep() {
     if (step >= path.length) {
-      // Animation done
+      clearTimeout(safetyTimeout);
       animGroup.remove();
       animating = false;
+      GS.animatingToken = null;
       callback?.();
       return;
     }
@@ -681,6 +694,148 @@ const GS = {
   validMoveTokens: [], rolling: false, isLocalGame: false,
   animatingToken: null, // { pi, ti }
 };
+
+// ═══════════════════════════════════════════════════════════════
+// TURN TIMER — 30-second countdown per human turn
+// ═══════════════════════════════════════════════════════════════
+
+const turnTimer = { id: null, seconds: 0, max: 30 };
+
+function startTurnTimer(seconds = 30) {
+  clearTurnTimer();
+  const isMyTurn = GS.currentTurn === GS.myIndex || GS.isLocalGame;
+  if (!isMyTurn) { hideTurnTimer(); return; }
+
+  turnTimer.seconds = seconds;
+  turnTimer.max = seconds;
+
+  const fill = document.getElementById('timerFill');
+  const label = document.getElementById('timerLabel');
+  if (fill) {
+    fill.classList.remove('urgent', 'hidden-fill');
+    fill.style.transition = 'none';
+    fill.style.width = '100%';
+    void fill.offsetWidth; // force reflow
+    fill.style.transition = 'width 1s linear';
+  }
+  if (label) { label.textContent = `${seconds}s`; label.classList.remove('urgent'); }
+
+  turnTimer.id = setInterval(() => {
+    turnTimer.seconds--;
+    const pct = Math.max(0, (turnTimer.seconds / turnTimer.max) * 100);
+    if (fill) {
+      fill.style.width = pct + '%';
+      if (pct <= 20) { fill.classList.add('urgent'); }
+    }
+    if (label) {
+      label.textContent = `${turnTimer.seconds}s`;
+      if (pct <= 20) label.classList.add('urgent');
+    }
+    if (turnTimer.seconds <= 0) {
+      clearTurnTimer();
+      // Auto-act: roll or pick first valid pawn
+      if (!GS.diceValue && !GS.rolling && !animating) {
+        triggerRoll();
+      } else if (GS.validMoveTokens.length > 0 && !animating) {
+        handleTokenClick(GS.validMoveTokens[0]);
+      }
+    }
+  }, 1000);
+}
+
+function clearTurnTimer() {
+  if (turnTimer.id) { clearInterval(turnTimer.id); turnTimer.id = null; }
+  hideTurnTimer();
+}
+
+function hideTurnTimer() {
+  const fill = document.getElementById('timerFill');
+  const label = document.getElementById('timerLabel');
+  if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; fill.classList.remove('urgent'); }
+  if (label) { label.textContent = ''; label.classList.remove('urgent'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CAPTURE FLASH
+// ═══════════════════════════════════════════════════════════════
+
+function flashCapture() {
+  const flash = document.getElementById('captureFlash');
+  if (!flash) return;
+  flash.classList.remove('active');
+  void flash.offsetWidth;
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 600);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXTRA TURN BANNER — floating label on bonus turns
+// ═══════════════════════════════════════════════════════════════
+
+function showExtraTurnBanner(reason) {
+  const existing = document.getElementById('extraTurnBanner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'extraTurnBanner';
+  banner.className = 'extra-turn-banner';
+  banner.textContent = reason || 'Bonus Turn!';
+  document.body.appendChild(banner);
+  setTimeout(() => { if (banner.parentNode) banner.remove(); }, 1800);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WIN / LOSS STATS  (localStorage)
+// ═══════════════════════════════════════════════════════════════
+
+function getStats() {
+  try { return JSON.parse(localStorage.getItem('ludo_stats') || '{"wins":0,"games":0,"captures":0}'); }
+  catch(e) { return { wins: 0, games: 0, captures: 0 }; }
+}
+function saveStats(stats) {
+  try { localStorage.setItem('ludo_stats', JSON.stringify(stats)); } catch(e) {}
+}
+function recordGameResult(iWon) {
+  const s = getStats();
+  s.games++;
+  if (iWon) s.wins++;
+  saveStats(s);
+  return s;
+}
+
+function showWinnerScreen(winnerName, winnerColor, winnerIndex) {
+  const iWon = (winnerIndex === GS.myIndex) || GS.isLocalGame;
+  const stats = recordGameResult(iWon);
+
+  document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
+  document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
+
+  const sub = document.getElementById('winnerSubtitle');
+  if (sub) sub.textContent = iWon ? '🎉 Congratulations! All 4 tokens home!' : 'All 4 tokens reached home!';
+
+  const statsEl = document.getElementById('winnerStats');
+  if (statsEl) {
+    const winRate = stats.games > 0 ? Math.round((stats.wins / stats.games) * 100) : 0;
+    const rateClass = winRate >= 60 ? 'win' : winRate >= 40 ? '' : 'loss';
+    const taglines = ['Keep practicing!', 'Getting better!', 'Solid player!', 'You\'re on fire! 🔥', 'Unstoppable! 👑'];
+    const tagIdx = Math.min(Math.floor(winRate / 25), taglines.length - 1);
+
+    statsEl.innerHTML = `
+      <div class="stat-row">
+        <span class="stat-label">Your Record</span>
+        <span class="stat-value">${stats.wins}W — ${stats.games - stats.wins}L</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Win Rate</span>
+        <span class="stat-value ${rateClass}">${winRate}%</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Games Played</span>
+        <span class="stat-value">${stats.games}</span>
+      </div>
+      <p class="winner-tagline">${taglines[tagIdx]}</p>
+    `;
+  }
+}
 
 // ─── ACTION QUEUE (Prevents race conditions between server events and UI animations) ───
 const actionQueue = [];
@@ -721,8 +876,67 @@ function handleTokenClick(tokenId) {
 
 // ─── Socket Events ─────────────────────────────────────
 
-socket.on('connect', () => console.log('[CONNECTED]', socket.id));
-socket.on('disconnect', () => showToast('Connection lost...'));
+socket.on('connect', () => {
+  console.log('[CONNECTED]', socket.id);
+  if (GS && GS.roomCode && GS.myName) {
+    showToast('Reconnecting to game...');
+    try {
+      socket.emit('rejoinRoom', { roomCode: GS.roomCode, playerName: GS.myName, playerId: playerId || '' }, (res) => {
+        if (res && res.success) {
+          console.log('[REJOIN SUCCESS]', res);
+          showToast('Reconnected successfully!');
+          GS.myIndex = res.playerIndex;
+          GS.players = res.players || [];
+          GS.myColor = GS.players[GS.myIndex]?.color || null;
+          
+          // Re-hydrate the board UI safely based on room status
+          if (res.status === 'playing') {
+            if (typeof showScreen !== 'undefined') showScreen('game');
+            if (typeof initGameScreen !== 'undefined') initGameScreen();
+          } else {
+            if (typeof showScreen !== 'undefined') showScreen('lobby');
+            if (typeof updateLobbyPlayers !== 'undefined') updateLobbyPlayers(GS.players);
+          }
+          
+          if (res.gameState) {
+            GS.tokens = res.gameState.tokens;
+            GS.currentTurn = res.gameState.currentTurn;
+            GS.diceValue = res.gameState.diceValue;
+            GS.validMoveTokens = res.gameState.validMoves || [];
+            
+            if (typeof updateGamePlayers !== 'undefined') updateGamePlayers();
+            if (typeof renderAllTokens !== 'undefined') renderAllTokens();
+            
+            // Critical fix: Ensure dice visual is updated with the last active dice value
+            if (typeof updateDice !== 'undefined') updateDice(GS.diceValue || res.gameState.diceValue);
+            
+            // Re-hide roll lock just in case it was stuck from previous session
+            GS.rolling = false;
+
+            // Re-enable dice if it was our turn and we haven't rolled yet in the synced state
+            if (GS.currentTurn === GS.myIndex && !res.gameState.rolled) {
+              if (typeof enableDice !== 'undefined') enableDice();
+            } else {
+              if (typeof disableDice !== 'undefined') disableDice();
+            }
+          }
+        } else {
+          // Silent fail or low prio toast if not in active game
+          console.log('Reconnection notice:', res ? res.error : 'Unknown error');
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+});
+
+socket.on('disconnect', () => {
+  console.log('[DISCONNECTED]');
+  if (GS && GS.roomCode) {
+    showToast('Connection lost... trying to reconnect...');
+  }
+});
 
 socket.on('playerJoined', ({ players, newPlayer }) => {
   GS.players = players;
@@ -753,7 +967,8 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
     SFX.diceResult(value);
     if (threeSixes) {
       SFX.noMoves();
-      setMsg('Three 6s! Turn skipped.');
+      clearTurnTimer();
+      setMsg('Three 6s in a row! Turn skipped. 🚫');
       return;
     }
 
@@ -761,17 +976,19 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
       GS.validMoveTokens = validMoves || [];
       if (validMoves.length === 0) {
         SFX.noMoves();
-        setMsg(`No moves available. Turn passes.`);
+        clearTurnTimer();
+        setMsg(`Rolled ${value} — no moves. Turn passes.`);
       } else if (validMoves.length === 1) {
-        // Auto-move single option after brief delay so user sees the dice
-        setMsg(value === 6 ? `Rolled 6! Moving...` : `Rolled ${value}! Moving...`);
+        clearTurnTimer();
+        setMyTurnMsg(value === 6 ? `Rolled 6! Moving...` : `Rolled ${value}! Moving...`);
         setTimeout(() => handleTokenClick(validMoves[0]), 400);
       } else {
-        // Multiple options — let player choose
+        // Multiple pawns to choose — keep timer running (or extend it slightly)
+        startTurnTimer(15);
         if (value === 6) {
-          setMsg(`Rolled 6! Tap a pawn to move or bring one out.`);
+          setMyTurnMsg(`Rolled 6! Tap a glowing pawn.`);
         } else {
-          setMsg(`Rolled ${value}! Tap a glowing pawn.`);
+          setMyTurnMsg(`Rolled ${value}! Tap a glowing pawn.`);
         }
       }
     } else {
@@ -784,6 +1001,7 @@ socket.on('diceRolled', ({ value, playerIndex, validMoves, threeSixes }) => {
 
 socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }) => {
   queueAction(() => {
+    clearTurnTimer(); // Turn is in motion, stop countdown
     // Save old state BEFORE updating for animation path computation
     const oldTokens = GS.tokens ? JSON.parse(JSON.stringify(GS.tokens)) : null;
     const playerColor = GS.players[playerIndex]?.color;
@@ -802,8 +1020,12 @@ socket.on('tokenMoved', ({ playerIndex, tokenId, move, captured, gameState: gs }
     // Play sound based on move type
     if (captured) {
       SFX.capture();
+      flashCapture();
       const capName = GS.players[captured.playerIndex]?.name || 'Player';
-      showToast(`Captured ${capName}'s token!`);
+      const toast = document.getElementById('toast');
+      if (toast) toast.className = 'toast toast-capture';
+      showToast(`💥 Captured ${capName}'s token!`);
+      setTimeout(() => { if (toast) toast.className = 'toast'; }, 3000);
     } else if (move && move.type === 'finish') {
       SFX.finish();
     } else if (move && move.type === 'enter') {
@@ -843,16 +1065,44 @@ socket.on('extraTurn', ({ playerIndex, reason }) => {
     GS.rolling = false;
     updateDice(null);
     SFX.extraTurn();
+    showExtraTurnBanner(reason || 'Bonus Turn!');
 
     if (playerIndex === GS.myIndex || GS.isLocalGame) {
-      setMsg(`Bonus turn! Roll again.`);
+      setMyTurnMsg(`Bonus turn! Roll again.`);
       enableDice();
+      startTurnTimer(20); // Shorter timer for bonus turns
     } else {
       const name = GS.players[playerIndex]?.name || 'Player';
-      setMsg(`${name} gets bonus turn!`);
+      setMsg(`${name} gets a bonus turn!`);
     }
     renderAllTokens();
   });
+});
+
+// 3-ROLL RULE: When all pawns stuck in home, server gives up to 3 dice attempts
+socket.on('autoReroll', ({ playerIndex, attempt, previousValue }) => {
+  const p = GS.players[playerIndex];
+  const name = p?.name || 'Player';
+  const isMe = playerIndex === GS.myIndex || GS.isLocalGame;
+
+  GS.rolling = false;
+  GS.diceValue = null;
+  updateDice(null);
+
+  // Show attempt dots  ●●○ = attempt 2 of 3
+  const dots = ['●', '●', '●'].map((d, i) => i < attempt ? d : '○').join('');
+  if (isMe) {
+    setMyTurnMsg(`No 6! Try ${attempt}/3 ${dots} — rolling...`);
+  } else {
+    setMsg(`${name} rolled ${previousValue} — try ${attempt}/3 ${dots}`);
+  }
+
+  if (isMe) {
+    setTimeout(() => {
+      enableDice();
+      triggerRoll();
+    }, 650);
+  }
 });
 
 socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
@@ -867,33 +1117,40 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
     updateDice(null);
     renderAllTokens();
 
+    const p = GS.players[currentTurn];
+    updateBoardFrameColor(p?.color || null);
+
     if (currentTurn === GS.myIndex || GS.isLocalGame) {
-      // YOUR TURN — prominent notification
       SFX.yourTurn();
-      const turnColor = GS.players[currentTurn]?.color || '';
+      const turnColor = p?.color || '';
       const colorName = turnColor.charAt(0).toUpperCase() + turnColor.slice(1);
-      setMsg(GS.isLocalGame ? `${colorName}'s turn! Roll the dice.` : `YOUR TURN! Roll the dice.`);
+      setMyTurnMsg(GS.isLocalGame ? `${colorName}'s turn! Roll the dice.` : `YOUR TURN! Roll the dice.`);
       enableDice();
-      // Flash the controls area
+      // Flash controls area
       const ctrl = document.querySelector('.game-controls');
       if (ctrl) {
         ctrl.style.transition = 'background 0.3s';
         ctrl.style.background = 'rgba(251,191,36,0.15)';
         setTimeout(() => { ctrl.style.background = ''; }, 1500);
       }
+      // Vibrate on mobile
+      if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+      startTurnTimer(30);
     } else {
       SFX.turnChange();
-      const p = GS.players[currentTurn];
-      const name = p?.name || 'Player';
-      setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
+      clearTurnTimer();
+      if (p?.isBot) {
+        setMsg(`${esc(p.name)} thinking<span class="bot-dots"><span class="bot-dot"></span><span class="bot-dot"></span><span class="bot-dot"></span></span>`, true);
+      } else {
+        setMsg(`${p?.name || 'Player'}'s turn...`);
+      }
       disableDice();
     }
-    
+
     // Toggle active base illumination
-    document.querySelectorAll('.home-base-group').forEach(group => group.classList.remove('base-active'));
-    const currentPlayer = GS.players[currentTurn];
-    if (currentPlayer && currentPlayer.color) {
-      const activeBase = document.getElementById(`base-${currentPlayer.color}`);
+    document.querySelectorAll('.home-base-group').forEach(g => g.classList.remove('base-active'));
+    if (p?.color) {
+      const activeBase = document.getElementById(`base-${p.color}`);
       if (activeBase) activeBase.classList.add('base-active');
     }
   });
@@ -902,10 +1159,10 @@ socket.on('turnChanged', ({ currentTurn, gameState: gs }) => {
 socket.on('gameOver', ({ winner, winnerName, winnerColor }) => {
   queueAction(() => {
     SFX.victory();
-    clearSession(); // Game ended, no need to rejoin
+    clearTurnTimer();
+    clearSession();
     showScreen('winner');
-    document.getElementById('winnerTitle').textContent = `${winnerName} Wins!`;
-    document.getElementById('winnerTitle').style.color = COLORS[winnerColor]?.bg || '#FFD700';
+    showWinnerScreen(winnerName, winnerColor, winner);
     startConfetti();
   });
 });
@@ -937,9 +1194,24 @@ function showToast(msg) {
   e._t = setTimeout(() => e.classList.add('hidden'), 3000);
 }
 
-function setMsg(msg) {
+function setMsg(msg, isHtml) {
   const e = document.getElementById('gameMessage');
-  if (e) e.textContent = msg;
+  if (!e) return;
+  e.classList.remove('my-turn-msg');
+  if (isHtml) { e.innerHTML = msg; }
+  else { e.textContent = msg; }
+}
+
+function setMyTurnMsg(msg) {
+  const e = document.getElementById('gameMessage');
+  if (!e) return;
+  e.textContent = msg;
+  e.classList.add('my-turn-msg');
+}
+
+/** Safe HTML escape for user-supplied strings used inside innerHTML */
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1251,21 +1523,33 @@ document.getElementById('btnStartGame').addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════════════
 
 function initGameScreen() {
+  clearTurnTimer();
   renderBoard(document.getElementById('ludoBoard'));
   updateGamePlayers();
   renderAllTokens();
 
-  if (GS.currentTurn === GS.myIndex || GS.isLocalGame) {
-    setMsg('Your turn! Roll the dice.');
-    enableDice();
-  } else {
-    const p = GS.players[GS.currentTurn];
-    const name = p?.name || 'Player';
-    setMsg(p?.isBot ? `${name} is thinking... 🤖` : `${name}'s turn...`);
-    disableDice();
+  const p = GS.players[GS.currentTurn];
+  updateBoardFrameColor(p?.color || null);
+
+  // Activate first player's base
+  document.querySelectorAll('.home-base-group').forEach(g => g.classList.remove('base-active'));
+  if (p?.color) {
+    const base = document.getElementById(`base-${p.color}`);
+    if (base) base.classList.add('base-active');
   }
 
-  // Voice chat is manual — tap 🎤 button to start. No auto mic prompts.
+  if (GS.currentTurn === GS.myIndex || GS.isLocalGame) {
+    setMyTurnMsg('Your turn! Roll the dice.');
+    enableDice();
+    startTurnTimer(30);
+  } else {
+    if (p?.isBot) {
+      setMsg(`${esc(p?.name || 'Bot')} thinking<span class="bot-dots"><span class="bot-dot"></span><span class="bot-dot"></span><span class="bot-dot"></span></span>`, true);
+    } else {
+      setMsg(`${p?.name || 'Player'}'s turn...`);
+    }
+    disableDice();
+  }
 }
 
 function updateGamePlayers() {
@@ -1302,8 +1586,24 @@ function updateGamePlayers() {
 
 // ─── Dice ──────────────────────────────────────────────
 
-function enableDice() { document.getElementById('btnRollDice').disabled = false; }
-function disableDice() { document.getElementById('btnRollDice').disabled = true; }
+function enableDice() {
+  const btn = document.getElementById('btnRollDice');
+  btn.disabled = false;
+  const isMyTurn = GS.currentTurn === GS.myIndex || GS.isLocalGame;
+  if (isMyTurn) btn.classList.add('my-turn');
+}
+function disableDice() {
+  const btn = document.getElementById('btnRollDice');
+  btn.disabled = true;
+  btn.classList.remove('my-turn');
+}
+
+function updateBoardFrameColor(color) {
+  const frame = document.querySelector('.board-frame');
+  if (!frame) return;
+  frame.className = frame.className.replace(/\bturn-\w+/g, '').trim();
+  if (color) frame.classList.add(`turn-${color}`);
+}
 
 function updateDice(value) {
   const svg = document.getElementById('diceSvg');
@@ -1358,11 +1658,28 @@ function triggerRoll() {
   if (GS.rolling || animating) return;
   if (!GS.isLocalGame && GS.currentTurn !== GS.myIndex) return;
   if (document.getElementById('btnRollDice').disabled) return;
-  SFX.init(); // Ensure audio context on user gesture
+
+  GS.rolling = true; // Lock immediately to prevent double rolls
+  SFX.init();
   SFX.diceRoll();
   disableDice();
+
+  // Safety: if server never responds within 6s, unlock dice
+  const rollSafetyTimer = setTimeout(() => {
+    if (GS.rolling) {
+      GS.rolling = false;
+      enableDice();
+      console.warn('[ROLL] Safety timeout — server never responded, unlocking dice');
+    }
+  }, 6000);
+
   socket.emit('rollDice', null, (r) => {
-    if (!r?.success) { enableDice(); showToast(r?.error || 'Cannot roll.'); }
+    clearTimeout(rollSafetyTimer);
+    if (!r?.success) {
+      GS.rolling = false;
+      enableDice();
+      console.warn('Roll rejected:', r?.error);
+    }
   });
 }
 
@@ -1455,10 +1772,61 @@ function startConfetti() {
 document.getElementById('btnRematch').addEventListener('click', () => {
   socket.emit('rematch', null, (r) => { if (!r?.success) showToast('Failed to rematch.'); });
 });
-document.getElementById('btnNewGame').addEventListener('click', () => { clearSession(); window.location.reload(); });
+document.getElementById('btnNewGame').addEventListener('click', () => { clearSession(); window.location.href = '/'; });
 document.getElementById('btnRefresh').addEventListener('click', () => window.location.reload());
-document.getElementById('btnBack').addEventListener('click', () => showScreen('lobby'));
-document.getElementById('btnLogout').addEventListener('click', () => { clearSession(); window.location.reload(); });
+document.getElementById('btnBack').addEventListener('click', () => { clearTurnTimer(); showScreen('lobby'); });
+document.getElementById('btnLogout').addEventListener('click', () => { clearTurnTimer(); clearSession(); window.location.href = '/'; });
+
+// ─── SOUND TOGGLE ──────────────────────────────────────
+const btnSoundToggle = document.getElementById('btnSoundToggle');
+if (btnSoundToggle) {
+  btnSoundToggle.addEventListener('click', () => {
+    SFX.enabled = !SFX.enabled;
+    btnSoundToggle.textContent = SFX.enabled ? '🔊' : '🔇';
+    btnSoundToggle.classList.toggle('muted', !SFX.enabled);
+    showToast(SFX.enabled ? 'Sound on' : 'Sound muted');
+  });
+}
+
+// ─── RULES / HELP MODAL ────────────────────────────────
+const btnHelp = document.getElementById('btnHelp');
+const rulesModal = document.getElementById('rulesModal');
+const btnCloseRules = document.getElementById('btnCloseRules');
+if (btnHelp && rulesModal) {
+  btnHelp.addEventListener('click', () => {
+    SFX.init();
+    rulesModal.classList.toggle('hidden');
+  });
+}
+if (btnCloseRules && rulesModal) {
+  btnCloseRules.addEventListener('click', () => rulesModal.classList.add('hidden'));
+}
+// Close modal on backdrop click
+if (rulesModal) {
+  rulesModal.addEventListener('click', (e) => {
+    if (e.target === rulesModal) rulesModal.classList.add('hidden');
+  });
+}
+
+// ─── CHAT QUICK EMOJI REACTIONS ────────────────────────
+document.querySelectorAll('.chat-emoji-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const emoji = btn.dataset.emoji;
+    if (!emoji) return;
+    SFX.init();
+    socket.emit('chatMessage', { message: emoji });
+    // Auto-open chat if closed
+    document.getElementById('chatPanel')?.classList.remove('hidden');
+  });
+});
+
+const btnLobbyLogout = document.getElementById('btnLobbyLogout');
+if (btnLobbyLogout) {
+  btnLobbyLogout.addEventListener('click', () => {
+    clearSession();
+    window.location.href = '/';
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 11. VOICE CHAT (WebRTC Peer-to-Peer Audio)
@@ -1905,10 +2273,25 @@ function tryRejoin(session) {
         // Rejoin mid-game
         GS.tokens = r.gameState.tokens;
         GS.currentTurn = r.gameState.currentTurn;
-        GS.diceValue = null;
-        GS.validMoveTokens = [];
+        GS.diceValue = r.gameState.diceValue;
+        GS.validMoveTokens = r.gameState.validMoves || [];
         showScreen('game');
         initGameScreen();
+        
+        // Critical: Update interface accurately based on exact saved state
+        if (typeof updateGamePlayers !== 'undefined') updateGamePlayers();
+        if (typeof renderAllTokens !== 'undefined') renderAllTokens();
+        if (typeof updateDice !== 'undefined') updateDice(GS.diceValue);
+        
+        GS.rolling = false;
+        
+        // Re-enable dice if it was our turn and we haven't rolled yet
+        if (GS.currentTurn === GS.myIndex && !r.gameState.rolled) {
+          if (typeof enableDice !== 'undefined') enableDice();
+        } else {
+          if (typeof disableDice !== 'undefined') disableDice();
+        }
+        
         showToast('Reconnected to game!');
       } else {
         // Rejoin lobby
